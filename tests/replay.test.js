@@ -3,6 +3,8 @@ import { byteLength } from "../src/bytes.js";
 import {
   CHECKOUT_MS,
   EDITABLE_SELECTOR,
+  FULL_SNAPSHOT_EVENT,
+  INCREMENTAL_SNAPSHOT_EVENT,
   MASKABLE_INPUTS,
   META_EVENT,
   REPLAY_JSON_MAX,
@@ -303,6 +305,146 @@ describe("scrubReplayEvent", () => {
     expect(scrubReplayEvent(undefined)).toBe(undefined);
     expect(scrubReplayEvent({ type: META_EVENT })).toEqual({ type: META_EVENT });
     expect(scrubReplayEvent({ type: META_EVENT, data: { href: 7 } }).data.href).toBe(7);
+  });
+});
+
+// The emit callback is a lever, not just a place to fix the Meta href: it sees every serialised
+// node on its way out, which is the only place three things rrweb has no option for can be
+// reached. All three were written down as "cannot be closed by configuration" and all three are
+// closed here (audit findings F3, F7 and F9).
+describe("scrubReplayEvent, on the serialised node tree", () => {
+  const el = (tagName, attributes, childNodes = []) => ({
+    type: 2,
+    tagName,
+    attributes,
+    childNodes,
+    id: 7,
+  });
+  const snapshot = (node) => ({
+    type: FULL_SNAPSHOT_EVENT,
+    data: { node, initialOffset: { top: 0, left: 0 } },
+  });
+  const mutation = (data) => ({ type: INCREMENTAL_SNAPSHOT_EVENT, data: { source: 0, ...data } });
+  const attributesOf = (event) => event.data.node.childNodes[0].attributes;
+
+  // rrweb masks a field only when its live `.value` is truthy (record.js:1080-1082), so a
+  // server-rendered `value=` that script has cleared is serialised raw — including on a
+  // `type="password"`, which no gap is allowed to excuse.
+  it("masks a value= attribute rrweb left alone because the live value was empty", () => {
+    const tree = snapshot(
+      el("div", {}, [el("input", { type: "password", name: "pw", value: "hunter2" })]),
+    );
+    const out = scrubReplayEvent(tree, maskInputOptionsFor(false));
+    expect(attributesOf(out).value).toBe("*******");
+    expect(attributesOf(out).name).toBe("pw");
+    expect(attributesOf(tree).value).toBe("hunter2");
+  });
+
+  it("masks the other kinds only when the app asked for maskAllInputs", () => {
+    const tree = () => snapshot(el("div", {}, [el("input", { type: "text", value: "1240.00" })]));
+    expect(attributesOf(scrubReplayEvent(tree(), maskInputOptionsFor(false))).value).toBe(
+      "1240.00",
+    );
+    expect(attributesOf(scrubReplayEvent(tree(), maskInputOptionsFor(true))).value).toBe("*******");
+  });
+
+  it("masks a hidden field and a file path whatever the app asked for", () => {
+    for (const type of ["hidden", "file"]) {
+      const tree = snapshot(el("div", {}, [el("input", { type, value: "secret" })]));
+      expect(attributesOf(scrubReplayEvent(tree, maskInputOptionsFor(false))).value).toBe("******");
+    }
+  });
+
+  it("leaves a button's and a checkbox's value alone, which are markup, not typed text", () => {
+    for (const type of ["submit", "button", "reset", "image", "checkbox", "radio"]) {
+      const tree = snapshot(el("div", {}, [el("input", { type, value: "Save" })]));
+      expect(attributesOf(scrubReplayEvent(tree, maskInputOptionsFor(true))).value, type).toBe(
+        "Save",
+      );
+    }
+  });
+
+  it("deletes an <iframe srcdoc>, which is a whole document in one attribute", () => {
+    const tree = snapshot(el("div", {}, [el("iframe", { srcdoc: "<p>ada@example.com</p>" })]));
+    expect(attributesOf(scrubReplayEvent(tree, {}))).toEqual({});
+  });
+
+  it("drops the class rrweb leaves on a blocked element", () => {
+    // A blocked element is reduced by rrweb to exactly {class, rr_width, rr_height}, which is the
+    // shape recognised here: its size is already recorded in px, so the class is not what keeps
+    // the placeholder's box.
+    const tree = snapshot(
+      el("div", {}, [
+        el("div", { class: "cost-1240 fbh-blank", rr_width: "120px", rr_height: "20px" }),
+      ]),
+    );
+    expect(attributesOf(scrubReplayEvent(tree, {}))).toEqual({
+      rr_width: "120px",
+      rr_height: "20px",
+    });
+  });
+
+  it("keeps the class of an ordinary element", () => {
+    const tree = snapshot(el("div", {}, [el("div", { class: "row cost" })]));
+    expect(attributesOf(scrubReplayEvent(tree, {})).class).toBe("row cost");
+  });
+
+  // The library strips the query string in four other places (pageContext, the Meta event, every
+  // network entry, the route breadcrumb) because cad-dashboard puts a magic-link token in one. An
+  // anchor back to that same URL is the same token.
+  it("strips the query string out of every URL-bearing attribute", () => {
+    const tree = snapshot(
+      el("div", {}, [
+        el("a", { href: "https://app.example/export?token=secret#top" }),
+        el("img", {
+          src: "https://cdn.example/i.png?sig=secret",
+          srcset: "https://cdn.example/1.png?sig=a 1x, https://cdn.example/2.png?sig=b 2x",
+        }),
+        el("form", { action: "/save?token=secret" }),
+        el("iframe", { rr_src: "https://app.example/inner?token=secret" }),
+      ]),
+    );
+    const [anchor, image, form, frame] = scrubReplayEvent(tree, {}).data.node.childNodes;
+    expect(anchor.attributes.href).toBe("https://app.example/export#top");
+    expect(image.attributes.src).toBe("https://cdn.example/i.png");
+    expect(image.attributes.srcset).toBe(
+      "https://cdn.example/1.png 1x, https://cdn.example/2.png 2x",
+    );
+    expect(form.attributes.action).toBe("/save");
+    expect(frame.attributes.rr_src).toBe("https://app.example/inner");
+  });
+
+  it("reaches a node added after the snapshot, and an attribute changed on one", () => {
+    const added = mutation({
+      adds: [
+        {
+          parentId: 1,
+          nextId: null,
+          node: el("input", { type: "password", value: "hunter2" }),
+        },
+      ],
+      attributes: [{ id: 2, attributes: { srcdoc: "<p>secret</p>", href: "/x?token=secret" } }],
+      texts: [],
+      removes: [],
+    });
+    const out = scrubReplayEvent(added, maskInputOptionsFor(false));
+    expect(out.data.adds[0].node.attributes.value).toBe("*******");
+    expect(out.data.adds[0].parentId).toBe(1);
+    expect(out.data.attributes[0]).toEqual({ id: 2, attributes: { href: "/x" } });
+  });
+
+  it("passes a tree and a mutation with nothing to scrub through by identity", () => {
+    const tree = snapshot(el("div", { class: "row" }, [el("p", { title: "Cost" })]));
+    expect(scrubReplayEvent(tree, maskInputOptionsFor(true))).toBe(tree);
+    const moved = mutation({
+      adds: [],
+      attributes: [],
+      texts: [{ id: 3, value: "x" }],
+      removes: [],
+    });
+    expect(scrubReplayEvent(moved, maskInputOptionsFor(true))).toBe(moved);
+    const mousemove = { type: INCREMENTAL_SNAPSHOT_EVENT, data: { source: 1, positions: [] } };
+    expect(scrubReplayEvent(mousemove, {})).toBe(mousemove);
   });
 });
 

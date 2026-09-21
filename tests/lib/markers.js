@@ -466,6 +466,27 @@ function inputPositions() {
     );
     out.push(
       position({
+        id: `input-cleared-password/${zone}`,
+        group: "inputs",
+        zone,
+        kind: "password",
+        where: `a password field whose server-rendered value= attribute is still there after script cleared its live value ${placeOf(zone)}`,
+        plant: (ctx) => {
+          // The same shape as `input-cleared`, on the one field kind no gap may ever excuse.
+          // rrweb masks a field only when its live value is truthy and does not special-case a
+          // password there, so "a password never leaves, under any settings" was a promise the
+          // harness could not reach until this position existed (audit finding F3).
+          const el = ctx.doc.createElement("input");
+          el.setAttribute("type", "password");
+          el.setAttribute("name", "cleared-pw");
+          el.setAttribute("value", ctx.marker);
+          el.value = "";
+          ctx.parent.appendChild(el);
+        },
+      }),
+    );
+    out.push(
+      position({
         id: `contenteditable/${zone}`,
         group: "inputs",
         zone,

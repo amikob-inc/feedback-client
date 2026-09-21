@@ -80,29 +80,17 @@ const MECHANISMS = [
 ];
 
 // --------------------------------------------------------------------------------------------
-// Gaps: published today, should not be, and no option we pass closes it. Every entry is a finding
-// in .superpowers/sdd/2026-09-21-mission-16-client-library/marker-harness-report.md.
+// Gaps: published today, should not be, and nothing we can do reaches it. Every entry is a
+// finding in .superpowers/sdd/2026-09-21-mission-16-client-library/harness-fix-report.md.
+//
+// The three the first report listed here are gone. They were described as "cannot be closed by
+// configuration", which was true and beside the point: no rrweb *option* reaches them, but this
+// library post-processes rrweb's output in its own emit callback — that is what `scrubReplayEvent`
+// is — and all three are closed there now (an <iframe srcdoc>, the class a blocked element keeps,
+// and a field's raw `value=` when the live value is empty). Their positions assert `withheld` like
+// any other, which is what a closed gap looks like here.
 
-const GAPS = [
-  {
-    id: "srcdoc-attribute",
-    match: (p) => p.id.startsWith("attr/srcdoc/") && p.zone === "ordinary",
-    why: "rrweb serialises an <iframe srcdoc> attribute verbatim — a whole document in one attribute, and rrweb has no option for it (report, finding G1)",
-  },
-  {
-    id: "blanked-class",
-    match: (p) => p.id === "attr/class/blanked",
-    why: "rrweb reduces a blocked element to {class, rr_width, rr_height}, so the class name survives the block (report, finding G2)",
-  },
-  {
-    id: "value-attribute-when-live-value-is-empty",
-    match: (p) =>
-      p.zone === "ordinary" &&
-      (/^input\/(number|date|datetime-local|month|week|time|file)\/attribute\//.test(p.id) ||
-        p.id.startsWith("input-cleared/")),
-    why: "rrweb masks a field only when its live .value is truthy; when the live value is empty the raw value= attribute is serialised as an ordinary attribute, masked or not (report, finding G3)",
-  },
-];
+const GAPS = [];
 
 // --------------------------------------------------------------------------------------------
 
@@ -147,6 +135,20 @@ export function expectedFate(position, settings) {
   }
   if (position.kind === "always-masked") {
     return fate("withheld", "a hidden field and a file path never leave, under any settings");
+  }
+  // A query string is a token risk wherever it is written down, not only in the page's own
+  // address. The library strips it from `pageContext`, from the Meta event, from every network
+  // entry and from the route breadcrumb, all for one stated reason — cad-dashboard's router puts
+  // a magic-link token in one — and an anchor pointing back at that URL carries the same token.
+  // The first report classified this position as ordinary markup and published it, which
+  // contradicted the four strips beside it; the strips were right (audit finding F7).
+  if (position.id.startsWith("attr/href-query/")) {
+    return fate("withheld", "a query string can carry a token, however the page writes it down");
+  }
+  // A whole document in one attribute, and the third review round in which it has escaped. rrweb
+  // has no option for it; scrubReplayEvent deletes it, in every zone (audit finding F9/G1).
+  if (position.id.startsWith("attr/srcdoc/")) {
+    return fate("withheld", "an <iframe srcdoc> is a whole document in one attribute");
   }
   if (zone === "sensitive" || zone === "blanked") {
     return fate("withheld", "the app named this element in capture.blank");

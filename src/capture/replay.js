@@ -137,16 +137,174 @@ export function stripQuery(href) {
   }
 }
 
-// The Meta event is the one place the recorder writes the page's own address, and it writes the
-// whole of it. mount.js's `pageContext` deliberately sends `pathname + hash` and never the query,
-// because cad-dashboard's router puts a magic-link token in one — so a recording that carries the
-// query straight past that decision undoes it. Every event goes through here on its way into the
-// segments; everything that is not a Meta event is passed along untouched, by identity.
-export function scrubReplayEvent(event) {
-  if (!event || event.type !== META_EVENT) return event;
+// Every URL a serialised node can carry. rrweb absolutises each of them against the document and
+// writes it whole, so a token in a query string travels in an anchor exactly as it travels in the
+// Meta event — and this library already strips the query in four other places (`pageContext`, the
+// Meta event, every network entry, the route breadcrumb) for that one reason: cad-dashboard's
+// router puts a magic-link token in one. An anchor back to the current page is the same token, so
+// it gets the same treatment. The cost is a replay whose signed or cache-busted image URLs no
+// longer resolve — a broken image rather than a live credential, which is the right way round.
+export const URL_ATTRIBUTES = [
+  "href",
+  "src",
+  "srcset",
+  "xlink:href",
+  "action",
+  "formaction",
+  "poster",
+  "data",
+  // rrweb renames an iframe's `src` rather than scrubbing it (record.js:1192-1197).
+  "rr_src",
+];
+
+// The three tag names whose `value` attribute is a field's content rather than markup.
+// `maskInputOptions` is keyed by input type *and* by tag name, which is how `select` and
+// `textarea` are named in MASKABLE_INPUTS.
+const FIELD_TAGS = new Set(["input", "textarea", "select"]);
+
+// rrweb's serialised node types; 2 is an element.
+const ELEMENT_NODE = 2;
+
+export const FULL_SNAPSHOT_EVENT = 2;
+export const INCREMENTAL_SNAPSHOT_EVENT = 3;
+
+function stripQueryFromSrcset(value) {
+  return value
+    .split(",")
+    .map((candidate) => {
+      const trimmed = candidate.trim();
+      const space = trimmed.search(/\s/);
+      if (space === -1) return stripQuery(trimmed);
+      return `${stripQuery(trimmed.slice(0, space))}${trimmed.slice(space)}`;
+    })
+    .join(", ");
+}
+
+// One attribute bag, scrubbed. Returns the bag it was given, by identity, when there was nothing
+// to do — which is what keeps a whole snapshot passing through untouched when it is clean.
+// `tagName` is empty for an attribute *mutation*, where rrweb sends the changed attributes with
+// no tag name; rrweb already masks a `value` there itself (record.js:2172-2182), so the only
+// thing lost by not knowing the tag is nothing.
+export function scrubAttributes(tagName, attributes, maskInputOptions = {}) {
+  if (!attributes || typeof attributes !== "object") return attributes;
+  const tag = String(tagName || "").toLowerCase();
+  let out = null;
+  const set = (name, value) => {
+    if (!out) out = { ...attributes };
+    if (value === undefined) delete out[name];
+    else out[name] = value;
+  };
+
+  // A blocked element is reduced by rrweb to exactly {class, rr_width, rr_height}, so its class
+  // name survives the block — `class="cost-1240 fbh-blank"` publishes what the app asked to hide.
+  // `needBlock` is deleted before the event is emitted, so the shape is what identifies it;
+  // `rr_width` is set nowhere else in rrweb. The placeholder keeps its box, because the box is
+  // those two px measurements and not the class. (Audit finding F9/G2.)
+  if (attributes.rr_width !== undefined && attributes.rr_height !== undefined) {
+    if (attributes.class !== undefined) set("class", undefined);
+  }
+
+  // A whole document in one attribute. rrweb deletes an iframe's `src` and never touches
+  // `srcdoc`; `keepIframeSrcFn` governs only `src`. This is the third review in which srcdoc has
+  // escaped. (Audit finding F9/G1.)
+  if (attributes.srcdoc !== undefined && (tag === "iframe" || tag === "")) {
+    set("srcdoc", undefined);
+  }
+
+  // rrweb masks a field's value only when the live `.value` is truthy (record.js:1080-1082), so a
+  // server-rendered `value=` that script has cleared, or one the browser rejected as invalid for
+  // the type, is serialised raw — on a `type="password"` as readily as anywhere else. Masking
+  // here needs no knowledge of the live value, which is exactly what is missing there. (Audit
+  // findings F3 and F9/G3.)
+  if (FIELD_TAGS.has(tag) && typeof attributes.value === "string" && attributes.value) {
+    const type = String(attributes.type || (tag === "input" ? "text" : tag)).toLowerCase();
+    if (maskInputOptions[tag] || maskInputOptions[type]) {
+      set("value", "*".repeat(attributes.value.length));
+    }
+  }
+
+  for (const name of URL_ATTRIBUTES) {
+    const value = attributes[name];
+    if (typeof value !== "string" || !value.includes("?")) continue;
+    set(name, name === "srcset" ? stripQueryFromSrcset(value) : stripQuery(value));
+  }
+  return out || attributes;
+}
+
+function scrubNode(node, maskInputOptions) {
+  if (!node || typeof node !== "object") return node;
+  let next = node;
+  if (node.type === ELEMENT_NODE) {
+    const attributes = scrubAttributes(node.tagName, node.attributes, maskInputOptions);
+    if (attributes !== node.attributes) next = { ...node, attributes };
+  }
+  if (Array.isArray(node.childNodes)) {
+    let changed = false;
+    const children = node.childNodes.map((child) => {
+      const one = scrubNode(child, maskInputOptions);
+      if (one !== child) changed = true;
+      return one;
+    });
+    if (changed) next = { ...next, childNodes: children };
+  }
+  return next;
+}
+
+function scrubAdds(adds, maskInputOptions) {
+  let changed = false;
+  const out = adds.map((add) => {
+    if (!add || typeof add !== "object") return add;
+    const node = scrubNode(add.node, maskInputOptions);
+    if (node === add.node) return add;
+    changed = true;
+    return { ...add, node };
+  });
+  return changed ? out : adds;
+}
+
+function scrubAttributeMutations(entries, maskInputOptions) {
+  let changed = false;
+  const out = entries.map((entry) => {
+    if (!entry || typeof entry !== "object") return entry;
+    const attributes = scrubAttributes("", entry.attributes, maskInputOptions);
+    if (attributes === entry.attributes) return entry;
+    changed = true;
+    return { ...entry, attributes };
+  });
+  return changed ? out : entries;
+}
+
+// The emit callback: the one place this library sees rrweb's output before it becomes a segment,
+// and therefore the only lever it has over what rrweb has no option for. Three of those are
+// closed here (the blocked element's class, an iframe's srcdoc, a field's raw `value=`), plus the
+// query strings — in the Meta event, which is the page's own address, and in every URL a
+// serialised node carries, which is every other address on the page.
+//
+// Copy-on-write throughout: rrweb keeps its own references to what it emits, so nothing here
+// mutates an event, and an event with nothing to scrub is returned by identity so the common case
+// costs one walk and no allocation.
+export function scrubReplayEvent(event, maskInputOptions = ALWAYS_MASKED_INPUTS) {
+  if (!event) return event;
   const data = event.data;
-  if (!data || typeof data.href !== "string" || !data.href.includes("?")) return event;
-  return { ...event, data: { ...data, href: stripQuery(data.href) } };
+  if (event.type === META_EVENT) {
+    if (!data || typeof data.href !== "string" || !data.href.includes("?")) return event;
+    return { ...event, data: { ...data, href: stripQuery(data.href) } };
+  }
+  if (event.type === FULL_SNAPSHOT_EVENT && data && data.node) {
+    const node = scrubNode(data.node, maskInputOptions);
+    return node === data.node ? event : { ...event, data: { ...data, node } };
+  }
+  // A mutation, identified by its shape rather than by its source number: added nodes come
+  // through `adds`, attribute changes through `attributes`.
+  if (event.type === INCREMENTAL_SNAPSHOT_EVENT && data) {
+    const adds = Array.isArray(data.adds) ? scrubAdds(data.adds, maskInputOptions) : data.adds;
+    const attributes = Array.isArray(data.attributes)
+      ? scrubAttributeMutations(data.attributes, maskInputOptions)
+      : data.attributes;
+    if (adds === data.adds && attributes === data.attributes) return event;
+    return { ...event, data: { ...data, adds, attributes } };
+  }
+  return event;
 }
 
 export function rrwebOptions(
@@ -199,10 +357,12 @@ export function startReplay(
           resolve(false);
           return;
         }
+        const maskInputOptions = maskInputOptionsFor(capture && capture.maskAllInputs);
         stopFn = record(
           rrwebOptions(
             capture,
-            (event, isCheckout) => segments.push(scrubReplayEvent(event), !!isCheckout),
+            (event, isCheckout) =>
+              segments.push(scrubReplayEvent(event, maskInputOptions), !!isCheckout),
             doc,
           ),
         );
