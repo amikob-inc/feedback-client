@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IMAGE_LOAD_TIMEOUT_MS } from "../src/panel/annotate.js";
 import { createForm } from "../src/panel/form.js";
 import { normalizeOptions } from "../src/options.js";
 
@@ -294,6 +295,70 @@ describe("createForm", () => {
     removeButton.click();
     expect($(".fbh-strip").querySelectorAll("[data-remove]")).toHaveLength(0);
     expect(document.activeElement).toBe($("#fbh-attach"));
+    form.destroy();
+  });
+
+  it("shows a Draw button on every thumbnail", async () => {
+    const { form } = setup();
+    await form.prepare();
+    expect($(".fbh-strip button[data-draw]")).not.toBe(null);
+    form.addImage(png(), "one.png");
+    expect($(".fbh-strip [data-image] button[data-draw]")).not.toBe(null);
+    form.destroy();
+  });
+
+  // jsdom fires neither `load` nor `error` for an <img src="blob:...">  (confirmed by hand while
+  // building src/panel/annotate.js), so the real, non-injected openAnnotator() this click reaches
+  // can only ever resolve through annotate.js's own load timeout — not instantly. Fake timers
+  // stand in for the wait so the test doesn't really take IMAGE_LOAD_TIMEOUT_MS.
+  it("opens the pen on a thumbnail; when the image can't be decoded (as in this environment) it says so instead of hanging", async () => {
+    vi.useFakeTimers();
+    try {
+      const { form } = setup();
+      await form.prepare();
+      form.addImage(png(), "one.png");
+      const drawButton = $(".fbh-strip [data-image] button[data-draw]");
+      drawButton.focus();
+      drawButton.click();
+      // annotatorMount.hidden flips synchronously, before openAnnotator's image load even starts.
+      expect($(".fbh-annotator-mount").hidden).toBe(false);
+      await vi.advanceTimersByTimeAsync(IMAGE_LOAD_TIMEOUT_MS);
+      expect($(".fbh-message").textContent).toBe("That image could not be opened for drawing.");
+      expect($(".fbh-annotator-mount").hidden).toBe(true);
+      // Never dropped to <body>: with nothing to rebuild (the load failed before any Save), the
+      // Draw button the reporter activated is still exactly where it was.
+      expect(document.activeElement).toBe(drawButton);
+      form.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Exercises the real save-and-refocus path without going through the real (jsdom-broken) image
+  // loader: replaceImage() is annotate.js's onDone callback, called directly here the way
+  // openAnnotator's onSave would call it after a real Save.
+  it("keeps keyboard focus on the same Draw button after a drawing is saved back onto its image", async () => {
+    const { form } = setup();
+    await form.prepare(); // strip: [Screenshot]
+    form.addImage(png(), "one.png"); // strip: [Screenshot, Image 1]
+    const drawButtons = () => [...document.querySelectorAll(".fbh-strip [data-draw]")];
+    expect(drawButtons()).toHaveLength(2);
+    const imageId = $(".fbh-strip [data-image]").dataset.image;
+    drawButtons()[1].focus();
+    form.replaceImage(imageId, png(9));
+    const after = drawButtons();
+    expect(after).toHaveLength(2);
+    expect(document.activeElement).toBe(after[1]);
+    expect(document.activeElement.getAttribute("aria-label")).toBe("Draw on Image 1");
+    form.destroy();
+  });
+
+  it("does nothing for replaceImage() when the id no longer matches any attachment (already removed)", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    expect(() => form.replaceImage("not-a-real-id", png())).not.toThrow();
+    expect($(".fbh-strip").querySelectorAll("[data-image]")).toHaveLength(1);
     form.destroy();
   });
 

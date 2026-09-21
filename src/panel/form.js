@@ -12,6 +12,7 @@ import {
 } from "../capture/screen.js";
 import { defaultSection } from "../options.js";
 import { warnOnce } from "../warn.js";
+import { openAnnotator } from "./annotate.js";
 import { clear, el } from "./dom.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
@@ -48,6 +49,11 @@ export function createForm({
   let replayAttached = false;
   const images = [];
   const urls = [];
+  // Tracks whatever annotate() currently has open, so destroy() can close it (see below): its
+  // pointermove/pointerup/keydown listeners live on `doc`, independent of this form's own DOM, so
+  // an open dialog would otherwise keep running after the form itself is gone.
+  let activeAnnotator = null;
+  let destroyed = false;
 
   const sectionSelect = el(doc, "select", { id: "fbh-section", class: "fbh-input" });
   const typeSelect = el(doc, "select", { id: "fbh-type", class: "fbh-input" });
@@ -60,6 +66,9 @@ export function createForm({
     placeholder: "What happened, and what did you expect?",
   });
   const strip = el(doc, "div", { class: "fbh-strip" });
+  // Hidden until a Draw button opens it; the panel's own DOM, not the annotator's, controls
+  // visibility (annotate.js knows nothing about the form around it). See annotate() below.
+  const annotatorMount = el(doc, "div", { class: "fbh-annotator-mount", hidden: true });
   const note = el(doc, "p", { class: "fbh-note" });
   // aria-atomic: the whole line is replaced on every update (never a partial diff a reporter
   // could misread as the complete list of attachments), so a screen reader must announce it whole
@@ -131,6 +140,7 @@ export function createForm({
       textarea,
     ]),
     strip,
+    annotatorMount,
     actions,
     note,
     el(doc, "label", { class: "fbh-check" }, [
@@ -206,7 +216,7 @@ export function createForm({
     });
   }
 
-  function thumbnail(blob, label, onRemove, extra = {}) {
+  function thumbnail(blob, label, onRemove, onDraw, extra = {}) {
     const url = objectUrl(blob);
     const preview = url
       ? el(doc, "img", { class: "fbh-thumb-img", src: url, alt: label })
@@ -214,6 +224,14 @@ export function createForm({
     return el(doc, "figure", { class: "fbh-thumb", ...extra }, [
       preview,
       el(doc, "figcaption", { text: label }),
+      el(doc, "button", {
+        type: "button",
+        class: "fbh-thumb-draw",
+        "data-draw": true,
+        "aria-label": `Draw on ${label}`,
+        text: "✎",
+        onClick: () => onDraw(blob),
+      }),
       el(doc, "button", {
         type: "button",
         class: "fbh-thumb-remove",
@@ -225,21 +243,33 @@ export function createForm({
     ]);
   }
 
-  // `renderStrip` rebuilds every thumbnail from scratch, so a Remove button that was just
-  // activated does not survive its own click — the DOM node under the reporter's focus is gone by
-  // the time this function returns. `focusIndex`, when given, is the strip position the removed
-  // attachment used to hold; whatever slides into that position (the next attachment, if any)
-  // gets focus after the rebuild, and the Attach control gets it when nothing did (the position
-  // fell off the end). Screenshot removal always vacates position 0. Omitted entirely on the
-  // calls that only add or replace an attachment: those have nothing to restore.
-  function renderStrip(focusIndex) {
+  // `renderStrip` rebuilds every thumbnail from scratch, so a button that was just activated does
+  // not survive its own click — the DOM node under the reporter's focus is gone by the time this
+  // function returns. `focus`, when given, says which control should get it back once the rebuild
+  // is done: a bare number is the strip position a just-removed attachment used to hold (Remove,
+  // unchanged since task 10); `{ index, selector }` generalises that to any button kind — used
+  // after Draw-and-Save replaces a thumbnail's image in place (see annotate() below), so the
+  // reporter keeps their place at the same Draw button rather than landing on <body> when the
+  // dialog closes. Whatever now occupies that slot gets focus; the Attach control gets it when
+  // nothing does (the position fell off the end). Omitted entirely on the calls that only add an
+  // attachment: those have nothing to restore.
+  function renderStrip(focus) {
     clear(strip);
     if (screenshot) {
       strip.appendChild(
-        thumbnail(screenshot, "Screenshot", () => {
-          screenshot = null;
-          renderStrip(0);
-        }),
+        thumbnail(
+          screenshot,
+          "Screenshot",
+          () => {
+            screenshot = null;
+            renderStrip(0);
+          },
+          (blob) =>
+            annotate(blob, (flattened) => {
+              screenshot = flattened;
+              renderStrip({ index: 0, selector: "[data-draw]" });
+            }),
+        ),
       );
     }
     images.forEach((entry, index) => {
@@ -252,15 +282,58 @@ export function createForm({
             images.splice(index, 1);
             renderStrip(stripPosition);
           },
+          (blob) => annotate(blob, (flattened) => replaceImage(entry.id, flattened)),
           { "data-image": entry.id },
         ),
       );
     });
     renderNote();
-    if (focusIndex !== undefined) {
-      const removeButtons = strip.querySelectorAll("[data-remove]");
-      (removeButtons[focusIndex] || attachButton).focus();
+    if (focus !== undefined) {
+      const { index, selector = "[data-remove]" } =
+        typeof focus === "number" ? { index: focus } : focus;
+      const controls = strip.querySelectorAll(selector);
+      (controls[index] || attachButton).focus();
     }
+  }
+
+  // The editor takes over the form area while it is open: one image, one pen, and no way to submit
+  // half-way through an annotation. `onClose` fires for Save, for Cancel, for Escape and for a
+  // failure to read the image, so there is one place that puts the form back — including keyboard
+  // focus, which the dialog's own removal from the DOM would otherwise drop to <body> (the same
+  // class of regression task 10 fixed for Remove). A successful Save already gets its own focus
+  // restoration from renderStrip() above (onDone runs before close(), so by the time this fires the
+  // old Draw button is already disconnected and `stop` correctly leaves it alone); Cancel, Escape
+  // and a load failure never touch the strip, so they need this to get back to where they started.
+  async function annotate(blob, onDone) {
+    const trigger = doc.activeElement && doc.activeElement !== doc.body ? doc.activeElement : null;
+    annotatorMount.hidden = false;
+    element.classList.add("fbh-form-annotating");
+    const stop = () => {
+      activeAnnotator = null;
+      annotatorMount.hidden = true;
+      element.classList.remove("fbh-form-annotating");
+      if (trigger && trigger.isConnected && typeof trigger.focus === "function") trigger.focus();
+    };
+    const annotator = await openAnnotator({
+      doc,
+      blob,
+      mount: annotatorMount,
+      onSave: (flattened) => onDone(flattened),
+      onClose: stop,
+    });
+    // The form (and its annotate() caller) can be destroyed while loadImage() was still pending
+    // above — destroy() only closes what activeAnnotator already points at, so a dialog that
+    // finishes opening *after* destroy() ran would otherwise never be told to close at all.
+    if (destroyed) {
+      annotator.close(); // a no-op {element: null, close(){}} when it never opened, either way
+      return;
+    }
+    if (!annotator.element) {
+      stop();
+      say("That image could not be opened for drawing.");
+      return;
+    }
+    activeAnnotator = annotator;
   }
 
   function addImage(blob, name = "image.png") {
@@ -282,10 +355,10 @@ export function createForm({
   }
 
   function replaceImage(id, blob) {
-    const entry = images.find((one) => one.id === id);
-    if (!entry) return;
-    entry.blob = blob;
-    renderStrip();
+    const index = images.findIndex((one) => one.id === id);
+    if (index === -1) return;
+    images[index].blob = blob;
+    renderStrip({ index: (screenshot ? 1 : 0) + index, selector: "[data-draw]" });
   }
 
   function onFilesPicked() {
@@ -460,7 +533,9 @@ export function createForm({
   }
 
   function destroy() {
+    destroyed = true;
     release();
+    if (activeAnnotator) activeAnnotator.close();
     releaseUrls();
     element.remove();
   }
