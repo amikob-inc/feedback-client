@@ -180,6 +180,119 @@ describe("snapshotDom", () => {
     document.getElementById("a").value = "typed-in";
     expect(snapshotDom(document, {})).toContain('value="typed-in"');
   });
+
+  // --- Review 5, F1: <template> content is invisible to querySelectorAll but is serialized ---
+  // (review-5.md, findings section + "Did I get anything sensitive through?"). The reviewer's own
+  // reproduction: a <script> and a password value planted inside a <template> both survived
+  // byte-for-byte in the standalone jsdom script they wrote to demonstrate it.
+
+  it("removes a <script> that lives inside a <template>", () => {
+    document.body.innerHTML = `<template id="t"><script>window.x = 1;</script></template>`;
+    const html = snapshotDom(document, {});
+    expect(html).not.toContain("window.x = 1");
+  });
+
+  it("blanks a password value planted inside a <template>", () => {
+    document.body.innerHTML = `<template id="t"><input type="password" value="hunter2-in-template"></template>`;
+    const html = snapshotDom(document, {});
+    expect(html).not.toContain("hunter2-in-template");
+  });
+
+  it("empties a blank-selector match that lives inside a <template>", () => {
+    document.body.innerHTML = `<template id="t"><div class="sku-price">£4,200</div></template>`;
+    const html = snapshotDom(document, { blank: [".sku-price"] });
+    expect(html).not.toContain("4,200");
+  });
+
+  it("sanitizes a <template> nested three deep inside other templates", () => {
+    document.body.innerHTML = `
+      <template id="outer">
+        <template id="middle">
+          <template id="inner">
+            <script>window.deep = 1;</script>
+            <input type="password" value="deep-secret">
+          </template>
+        </template>
+      </template>`;
+    const html = snapshotDom(document, {});
+    expect(html).not.toContain("window.deep = 1");
+    expect(html).not.toContain("deep-secret");
+  });
+
+  it("never leaks a <template> planted inside an open shadow root's markup", () => {
+    // Shadow-root content is never serialized at all (existing behaviour, unrelated to the
+    // <template> fix), so a <template> placed inside one must stay invisible regardless of what
+    // is inside it.
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `<template><input type="password" value="shadow-template-secret"></template>`;
+    const html = snapshotDom(document, {});
+    expect(html).not.toContain("shadow-template-secret");
+  });
+
+  it("still blanks a template's content when the template itself sits under a blank-matched ancestor", () => {
+    document.body.innerHTML = `
+      <div class="sku-price"><template><input type="text" value="ancestor-blanked"></template></div>`;
+    const html = snapshotDom(document, { blank: [".sku-price"] });
+    expect(html).not.toContain("ancestor-blanked");
+  });
+
+  it("blanks a <template>'s content when the blank selector matches the template itself", () => {
+    document.body.innerHTML = `<template class="sku-price"><input type="text" value="direct-hit"></template>`;
+    const html = snapshotDom(document, { blank: [".sku-price"] });
+    expect(html).not.toContain("direct-hit");
+  });
+
+  // --- Review 5, F2: checkboxes/radios ignore maskAllInputs ---
+
+  it("does not reveal a checked checkbox's state under maskAllInputs", () => {
+    document.body.innerHTML = `<input id="c" type="checkbox">`;
+    document.getElementById("c").checked = true;
+    const html = snapshotDom(document, { maskAllInputs: true });
+    expect(html).not.toContain("checked");
+  });
+
+  it("does not reveal a checked radio's state under maskAllInputs", () => {
+    document.body.innerHTML = `<input id="r" type="radio" name="g">`;
+    document.getElementById("r").checked = true;
+    const html = snapshotDom(document, { maskAllInputs: true });
+    expect(html).not.toContain("checked");
+  });
+
+  it("still stamps a checked checkbox's state when maskAllInputs is not set", () => {
+    // Guards against the fix over-correcting: unmasked behaviour must keep working.
+    document.body.innerHTML = `<input id="c" type="checkbox">`;
+    document.getElementById("c").checked = true;
+    const html = snapshotDom(document, {});
+    expect(html).toContain("checked");
+  });
+
+  // --- Review 5, F3: contenteditable is not in FIELDS ---
+
+  it("blanks a contenteditable element's typed content under maskAllInputs", () => {
+    document.body.innerHTML = `<div id="e" contenteditable="true">a secret note</div>`;
+    const html = snapshotDom(document, { maskAllInputs: true });
+    expect(html).not.toContain("a secret note");
+  });
+
+  it("blanks a contenteditable element with a bare contenteditable attribute under maskAllInputs", () => {
+    document.body.innerHTML = `<div id="e" contenteditable>a bare secret</div>`;
+    const html = snapshotDom(document, { maskAllInputs: true });
+    expect(html).not.toContain("a bare secret");
+  });
+
+  it("leaves contenteditable content alone when maskAllInputs is not set", () => {
+    document.body.innerHTML = `<div id="e" contenteditable="true">kept note</div>`;
+    const html = snapshotDom(document, {});
+    expect(html).toContain("kept note");
+  });
+
+  it("does not touch an element whose contenteditable is explicitly false", () => {
+    document.body.innerHTML = `<div id="e" contenteditable="false">not editable</div>`;
+    const html = snapshotDom(document, { maskAllInputs: true });
+    expect(html).toContain("not editable");
+  });
 });
 
 describe("blankElements", () => {

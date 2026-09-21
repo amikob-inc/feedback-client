@@ -20,12 +20,49 @@ import { warnOnce } from "../warn.js";
 export const BLANKED_ATTR = "data-fbh-blanked";
 const FIELDS = "input, textarea, select";
 
+// A <template>'s children are never part of the normal tree: `.content` holds them in a detached
+// DocumentFragment that querySelectorAll on the template (or any ancestor of it) does not descend
+// into — but cloneNode(true)/.outerHTML copy that fragment in full, so anything the sanitising
+// passes below (stampValues, script removal, blankElements) reach only via querySelectorAll would
+// otherwise pass through untouched. `templateRoots` returns every scope that needs its own
+// querySelectorAll call to be seen at all: the given root, plus every <template>'s `.content`
+// found anywhere under it, applied recursively so a template nested inside another template's
+// content is found too (the array grows while the loop walks it, so a newly appended content
+// fragment is itself scanned for further nested templates on a later iteration).
+function templateRoots(root) {
+  const roots = [root];
+  for (let i = 0; i < roots.length; i += 1) {
+    const scope = roots[i];
+    if (!scope.querySelectorAll) continue;
+    for (const template of scope.querySelectorAll("template")) roots.push(template.content);
+  }
+  return roots;
+}
+
+function fieldsIn(roots) {
+  const fields = [];
+  for (const root of roots) fields.push(...root.querySelectorAll(FIELDS));
+  return fields;
+}
+
+// contenteditable is an enumerated attribute: absent means "not this element" (it may still
+// inherit editability from an ancestor, which is that ancestor's own contenteditable element and
+// gets masked there), "false" opts out, and "", "true" and "plaintext-only" all mean editable.
+function isEditableHost(el) {
+  if (!el.hasAttribute("contenteditable")) return false;
+  const value = el.getAttribute("contenteditable").trim().toLowerCase();
+  return value === "" || value === "true" || value === "plaintext-only";
+}
+
 export function stampValues(live, clone, { maskAllInputs = false } = {}) {
-  const liveFields = live.querySelectorAll(FIELDS);
-  const cloneFields = clone.querySelectorAll(FIELDS);
-  // Both calls walk the same light-DOM shape the clone was made from, so they line up index for
-  // index — including skipping shadow-root and <iframe> content identically, since neither call
-  // pierces either boundary. Only the shorter length is trusted, in case the two ever disagree.
+  const liveRoots = templateRoots(live);
+  const cloneRoots = templateRoots(clone);
+  const liveFields = fieldsIn(liveRoots);
+  const cloneFields = fieldsIn(cloneRoots);
+  // Both root lists walk the same light-DOM shape the clone was made from (cloneNode(true)
+  // preserves template nesting exactly), so they line up index for index — including skipping
+  // shadow-root and <iframe> content identically, since neither call pierces either boundary.
+  // Only the shorter length is trusted, in case the two ever disagree.
   const count = Math.min(liveFields.length, cloneFields.length);
   for (let i = 0; i < count; i += 1) {
     const from = liveFields[i];
@@ -39,7 +76,9 @@ export function stampValues(live, clone, { maskAllInputs = false } = {}) {
       // whose type is flipped by script after render correctly masked.
       const type = String(from.type || "text").toLowerCase();
       if (type === "checkbox" || type === "radio") {
-        if (from.checked) to.setAttribute("checked", "");
+        // Which options a colleague ticked is exactly what maskAllInputs promises to withhold, so
+        // under it the checked state is never carried over — not even the live "false" value.
+        if (!maskAllInputs && from.checked) to.setAttribute("checked", "");
         else to.removeAttribute("checked");
         continue;
       }
@@ -52,6 +91,18 @@ export function stampValues(live, clone, { maskAllInputs = false } = {}) {
       for (let j = 0; j < options.length; j += 1) {
         if (!maskAllInputs && j === from.selectedIndex) options[j].setAttribute("selected", "");
         else options[j].removeAttribute("selected");
+      }
+    }
+  }
+
+  // contenteditable holds what was typed as real child nodes, not a hidden `.value` property, so
+  // cloneNode already carries it — the only work left is to clear it in the clone when
+  // maskAllInputs asks for every field to be withheld. Scanned across the same template-aware
+  // roots as everything else, so a contenteditable authored inside a <template> is covered too.
+  if (maskAllInputs) {
+    for (const root of cloneRoots) {
+      for (const el of root.querySelectorAll("[contenteditable]")) {
+        if (isEditableHost(el)) el.textContent = "";
       }
     }
   }
@@ -68,22 +119,35 @@ export function stampValues(live, clone, { maskAllInputs = false } = {}) {
 // while the element looks empty.
 function blankOne(el) {
   el.textContent = "";
-  if (el.tagName && el.tagName.toLowerCase() === "input") {
+  const tag = el.tagName && el.tagName.toLowerCase();
+  if (tag === "input") {
     el.setAttribute("value", "");
     el.removeAttribute("checked");
+  } else if (tag === "template" && el.content) {
+    // `.textContent = ""` above only touches a <template>'s (always empty) light-DOM children;
+    // its actual content lives in the detached `.content` fragment, which a selector matching the
+    // <template> element directly — as opposed to matching an ancestor of one, already covered by
+    // the ancestor's own textContent wipe removing the template node whole — would otherwise miss.
+    while (el.content.firstChild) el.content.removeChild(el.content.firstChild);
   }
   el.setAttribute(BLANKED_ATTR, "");
 }
 
 export function blankElements(clone, selectors) {
+  // Scanned across the template-aware roots too: a `blank` selector can match something authored
+  // inside a <template>'s content just as easily as something in the normal tree, and that
+  // content is invisible to a plain clone.querySelectorAll call.
+  const roots = templateRoots(clone);
   for (const selector of selectors) {
-    let matches;
-    try {
-      matches = clone.querySelectorAll(selector);
-    } catch {
-      continue; // a selector the app got wrong must not cost the whole snapshot
+    for (const root of roots) {
+      let matches;
+      try {
+        matches = root.querySelectorAll(selector);
+      } catch {
+        break; // an invalid selector fails the same way on every root; stop trying this one
+      }
+      for (const el of matches) blankOne(el);
     }
-    for (const el of matches) blankOne(el);
   }
 }
 
@@ -92,7 +156,12 @@ export function snapshotDom(doc, { maskAllInputs = false, blank = [] } = {}) {
     const root = doc.documentElement;
     const clone = root.cloneNode(true);
     stampValues(root, clone, { maskAllInputs });
-    for (const script of clone.querySelectorAll("script")) script.remove();
+    // Removed across the template-aware roots too, for the same reason as blankElements above: a
+    // <script> planted inside a <template> is serialized by .outerHTML but is invisible to
+    // clone.querySelectorAll("script") on its own.
+    for (const scriptRoot of templateRoots(clone)) {
+      for (const script of scriptRoot.querySelectorAll("script")) script.remove();
+    }
     blankElements(clone, blank);
     return `<!doctype html>\n${clone.outerHTML}`;
   } catch (err) {
