@@ -2,13 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { byteLength } from "../src/bytes.js";
 import {
   CHECKOUT_MS,
+  EDITABLE_SELECTOR,
+  MASKABLE_INPUTS,
+  META_EVENT,
   REPLAY_JSON_MAX,
   SAMPLING,
+  SLIM_DOM,
   createSegments,
   idle,
+  maskInputOptionsFor,
   rrwebOptions,
+  scrubReplayEvent,
   serializeReplay,
   startReplay,
+  stripQuery,
 } from "../src/capture/replay.js";
 import { resetWarnings } from "../src/warn.js";
 
@@ -132,8 +139,9 @@ describe("rrwebOptions", () => {
     expect(rrwebOptions({ maskAllInputs: false, blank: [] }, emit)).toEqual({
       emit,
       checkoutEveryNms: CHECKOUT_MS,
-      maskInputOptions: { password: true },
       maskAllInputs: false,
+      maskInputOptions: { password: true, hidden: true, file: true },
+      slimDOMOptions: { ...SLIM_DOM },
       sampling: { ...SAMPLING },
       recordCanvas: false,
     });
@@ -147,7 +155,6 @@ describe("rrwebOptions", () => {
       () => {},
     );
     expect(options.blockSelector).toBe(".sku-price,.email");
-    expect(options.maskAllInputs).toBe(true);
   });
 
   it("omits blockSelector when blank is empty or absent", () => {
@@ -155,13 +162,105 @@ describe("rrwebOptions", () => {
     expect(rrwebOptions(undefined, () => {})).not.toHaveProperty("blockSelector");
   });
 
-  it("always masks passwords, whatever maskAllInputs is", () => {
-    expect(rrwebOptions({ maskAllInputs: false }, () => {}).maskInputOptions).toEqual({
-      password: true,
-    });
-    expect(rrwebOptions({ maskAllInputs: true }, () => {}).maskInputOptions).toEqual({
-      password: true,
-    });
+  // rrweb's own `maskAllInputs: true` expands to a fixed list of input kinds *and discards any
+  // maskInputOptions passed with it*, so the flag and a correction cannot be combined. The list
+  // it expands to leaves out `hidden` and `file`. The marker harness caught both
+  // (tests/leak-matrix.test.js): a hidden field's value and a file input's fake path — which
+  // still names the file — reached the recording with maskAllInputs on.
+  it("never passes rrweb's maskAllInputs flag, whatever the app asked for", () => {
+    expect(rrwebOptions({ maskAllInputs: true }, () => {}).maskAllInputs).toBe(false);
+    expect(rrwebOptions({ maskAllInputs: false }, () => {}).maskAllInputs).toBe(false);
+  });
+
+  it("always masks a password, a hidden field and a file path", () => {
+    for (const maskAllInputs of [true, false]) {
+      const options = rrwebOptions({ maskAllInputs }, () => {}).maskInputOptions;
+      expect(options.password).toBe(true);
+      expect(options.hidden).toBe(true);
+      expect(options.file).toBe(true);
+    }
+  });
+
+  it("names every other maskable kind only when the app asked for maskAllInputs", () => {
+    expect(maskInputOptionsFor(false)).toEqual({ password: true, hidden: true, file: true });
+    const all = maskInputOptionsFor(true);
+    for (const kind of MASKABLE_INPUTS) expect(all[kind], kind).toBe(true);
+    expect(Object.keys(all).sort()).toEqual(
+      [...MASKABLE_INPUTS, "password", "hidden", "file"].sort(),
+    );
+    // A button's label is not a value anybody typed, and masking it would put asterisks on a
+    // button in the replay.
+    for (const label of ["submit", "button", "reset", "image"]) {
+      expect(all[label], label).toBeUndefined();
+    }
+  });
+
+  it("masks contenteditable text under maskAllInputs, and only then", () => {
+    expect(rrwebOptions({ maskAllInputs: true }, () => {}).maskTextSelector).toBe(
+      EDITABLE_SELECTOR,
+    );
+    expect(rrwebOptions({ maskAllInputs: false }, () => {})).not.toHaveProperty("maskTextSelector");
+  });
+
+  it("asks rrweb to leave out comments, scripts and the token-bearing head meta", () => {
+    const slim = rrwebOptions({}, () => {}).slimDOMOptions;
+    expect(slim.comment).toBe(true);
+    expect(slim.script).toBe(true);
+    expect(slim.headMetaVerification).toBe(true);
+    expect(slim.headMetaHttpEquiv).toBe(true);
+    // Kept: a dashboard retitles itself on every route change and the replay should follow.
+    expect(slim.headTitleMutations).toBeUndefined();
+  });
+});
+
+describe("stripQuery", () => {
+  it("drops the query and keeps everything else", () => {
+    expect(stripQuery("https://app.example/rings?token=abc")).toBe("https://app.example/rings");
+    expect(stripQuery("https://app.example/rings?token=abc#batch-7")).toBe(
+      "https://app.example/rings#batch-7",
+    );
+    expect(stripQuery("https://app.example/rings#batch-7")).toBe(
+      "https://app.example/rings#batch-7",
+    );
+  });
+
+  it("falls back to cutting by hand on a URL it cannot parse, and never throws", () => {
+    expect(stripQuery("not a url?token=abc")).toBe("not a url");
+    expect(stripQuery("not a url?token=abc#tail")).toBe("not a url#tail");
+    expect(stripQuery(undefined)).toBe("");
+    expect(stripQuery(null)).toBe("");
+    expect(stripQuery(7)).toBe("");
+  });
+});
+
+describe("scrubReplayEvent", () => {
+  // mount.js's pageContext sends `pathname + hash` and never the query, because cad-dashboard's
+  // router puts a magic-link token in one. rrweb's Meta event carries window.location.href whole,
+  // which undoes that decision; the marker harness found it by planting a marker in the page's
+  // own query string (channel/location-query).
+  it("takes the query string out of a Meta event's href", () => {
+    const event = {
+      type: META_EVENT,
+      data: { href: "https://app.example/rings?token=secret", width: 1280, height: 800 },
+      timestamp: 1,
+    };
+    const out = scrubReplayEvent(event);
+    expect(out.data.href).toBe("https://app.example/rings");
+    expect(out.data.width).toBe(1280);
+    expect(out.data.height).toBe(800);
+    expect(out.timestamp).toBe(1);
+    // The caller's event is not mutated: rrweb keeps its own references to what it emits.
+    expect(event.data.href).toBe("https://app.example/rings?token=secret");
+  });
+
+  it("passes everything else through by identity", () => {
+    const full = { type: 2, data: { node: {} } };
+    expect(scrubReplayEvent(full)).toBe(full);
+    const clean = { type: META_EVENT, data: { href: "https://app.example/rings" } };
+    expect(scrubReplayEvent(clean)).toBe(clean);
+    expect(scrubReplayEvent(undefined)).toBe(undefined);
+    expect(scrubReplayEvent({ type: META_EVENT })).toEqual({ type: META_EVENT });
+    expect(scrubReplayEvent({ type: META_EVENT, data: { href: 7 } }).data.href).toBe(7);
   });
 });
 
@@ -216,6 +315,22 @@ describe("startReplay", () => {
     expect(replay.segments.events()).toEqual([{ type: 2 }, { type: 3 }]);
     replay.stop();
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("scrubs every event on its way into the segments", async () => {
+    const load = vi.fn(async () => ({
+      record(options) {
+        options.emit({ type: 4, data: { href: "https://app.example/rings?token=secret" } }, true);
+        options.emit({ type: 3, data: { source: 2 } }, false);
+        return () => {};
+      },
+    }));
+    const replay = startReplay({}, { load, schedule: (fn) => fn() });
+    expect(await replay.ready).toBe(true);
+    expect(replay.segments.events()).toEqual([
+      { type: 4, data: { href: "https://app.example/rings" } },
+      { type: 3, data: { source: 2 } },
+    ]);
   });
 
   it("does not start the recorder at all until the callback runs", async () => {

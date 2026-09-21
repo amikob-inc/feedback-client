@@ -3,6 +3,14 @@
 // run replays in prose before it looks at anything else, so a breadcrumb names the thing that was
 // clicked rather than the pixel it was clicked at. Values are masked the same way the replay
 // masks them (spec §5.7); a route breadcrumb carries path and hash, never a query string.
+//
+// A describer is a reader of the page, not just of an event: `describeClickTarget` takes an
+// element's id, data attributes, aria-label and text, and `fieldLabel` takes a field's label,
+// aria-label, placeholder and name. All of that is page content, so `capture.blank` — the
+// selectors an app points at its cost prices and customer records — has to apply here exactly as
+// it applies to the recording. It did not, until the marker harness planted a marker in the text
+// of a button inside a blanked region and watched it come out in the report's breadcrumb trail
+// (tests/leak-matrix.test.js, channel/click-text).
 import { Ring, cut } from "./ring.js";
 import { warnOnce } from "../warn.js";
 
@@ -81,12 +89,48 @@ function closestTarget(node) {
   return node.closest(CLICK_TARGETS) || node;
 }
 
+// What a blanked element gets described as: enough to read the trail ("they clicked a button,
+// then changed a field"), nothing of what the element said. The tag name is markup, not data.
+export function hiddenTarget(el) {
+  return el && el.tagName ? `${el.tagName.toLowerCase()} (hidden)` : "(hidden)";
+}
+
+// One selector list, built once, with the unusable entries dropped rather than the whole list:
+// an app that ships one typo in `capture.blank` must not lose the protection of the other
+// selectors it got right. `doc.querySelector` is the cheapest way to ask the engine whether a
+// selector parses, and it runs once per selector at install rather than once per click.
+export function usableSelector(doc, blank) {
+  const ok = [];
+  for (const one of blank || []) {
+    if (typeof one !== "string" || !one.trim()) continue;
+    try {
+      doc.querySelector(one);
+      ok.push(one);
+    } catch {
+      // Not a selector this engine can parse. Skipped, and the rest of the list still applies.
+    }
+  }
+  return ok.join(",");
+}
+
 export function installBreadcrumbBuffer({
   target = window,
   doc = target.document,
   now = () => new Date().toISOString(),
   maskAllInputs = false,
+  blank = [],
 } = {}) {
+  const blankSelector = usableSelector(doc, blank);
+  // `closest` walks up from the element itself, so this covers both the blanked element and
+  // everything inside it — the same reach `blockSelector` has in the recording.
+  const isBlanked = (el) => {
+    if (!blankSelector || !el || typeof el.closest !== "function") return false;
+    try {
+      return !!el.closest(blankSelector);
+    } catch {
+      return false;
+    }
+  };
   const ring = new Ring(BREADCRUMBS_KEEP);
   // Every breadcrumb, whatever kind, is recorded through this one function, and everything that
   // can fail — reading `now()`, describing the target/field/route, pushing onto the ring — is
@@ -102,9 +146,11 @@ export function installBreadcrumbBuffer({
   };
 
   const path = () => `${target.location.pathname}${target.location.hash}`;
-  const onClick = (e) => add("click", () => describeClickTarget(closestTarget(e.target)));
-  const onChange = (e) => add("change", () => describeFieldChange(e.target, { maskAllInputs }));
-  const onSubmit = (e) => add("submit", () => describeClickTarget(e.target));
+  const describe = (el, full) => (isBlanked(el) ? hiddenTarget(el) : full(el));
+  const onClick = (e) => add("click", () => describe(closestTarget(e.target), describeClickTarget));
+  const onChange = (e) =>
+    add("change", () => describe(e.target, (el) => describeFieldChange(el, { maskAllInputs })));
+  const onSubmit = (e) => add("submit", () => describe(e.target, describeClickTarget));
   const onRoute = () => add("route", path);
   const onVisibility = () => add("visibility", () => doc.visibilityState);
   const onOnline = () => add("connection", () => "online");

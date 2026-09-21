@@ -30,6 +30,28 @@ describe("installBuffers", () => {
     buffers.uninstall();
   });
 
+  it("passes capture.blank to the breadcrumbs", () => {
+    // The recorder blocks on these selectors; the breadcrumb describer has to honour them too,
+    // or a cost price reaches the report through the trail instead of the recording.
+    document.body.innerHTML = `<div class="sku-price"><button id="a" data-cost="1240">Cost GBP 1,240</button></div>`;
+    const buffers = installBuffers({
+      win: window,
+      doc: document,
+      capture: { blank: [".sku-price"] },
+    });
+    document.getElementById("a").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffers.breadcrumbs()[0].target).toBe("button (hidden)");
+    buffers.uninstall();
+  });
+
+  it("copes with a capture.blank that is not an array", () => {
+    document.body.innerHTML = `<button id="a">Rings</button>`;
+    const buffers = installBuffers({ win: window, doc: document, capture: { blank: ".x" } });
+    document.getElementById("a").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffers.breadcrumbs()[0].target).toBe("button#a 'Rings'");
+    buffers.uninstall();
+  });
+
   it("passes maskAllInputs to the breadcrumbs", () => {
     document.body.innerHTML = `<input id="a" aria-label="Note">`;
     const buffers = installBuffers({

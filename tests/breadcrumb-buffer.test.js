@@ -6,7 +6,9 @@ import {
   describeClickTarget,
   describeFieldChange,
   fieldLabel,
+  hiddenTarget,
   installBreadcrumbBuffer,
+  usableSelector,
 } from "../src/buffers/breadcrumbs.js";
 import { resetWarnings } from "../src/warn.js";
 
@@ -303,5 +305,101 @@ describe("installBreadcrumbBuffer", () => {
     expect(buffer.entries()).toEqual([]);
     expect(warn).toHaveBeenCalledTimes(1);
     buffer.uninstall();
+  });
+});
+
+// A describer reads the page, not just the event: it takes an element's id, data attributes,
+// aria-label and text, and a field's label, aria-label, placeholder and name. All of that is page
+// content, so the selectors an app passes in `capture.blank` have to reach here too. Every case
+// below was found by the marker harness (tests/leak-matrix.test.js, the `channel/click-*` and
+// `channel/change-*` positions), which watched a cost price planted in a blanked button's text
+// come out in the report's breadcrumb trail.
+describe("installBreadcrumbBuffer with capture.blank", () => {
+  const blank = [".sku-price"];
+
+  it("withholds a clicked element's text, aria-label, data attributes and id", () => {
+    document.body.innerHTML = `<div class="sku-price"><button id="cost-1240" data-cost="1240" aria-label="Cost GBP 1,240">Cost GBP 1,240</button></div>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document
+      .getElementById("cost-1240")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffer.entries()).toEqual([{ t: at(), kind: "click", target: "button (hidden)" }]);
+    buffer.uninstall();
+  });
+
+  it("withholds a changed field's label, placeholder, name and value", () => {
+    document.body.innerHTML = `<div class="sku-price"><label>Cost price<input id="c" name="cost_gbp" placeholder="1240.00"></label></div>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    const input = document.getElementById("c");
+    input.value = "1240.00";
+    input.dispatchEvent(new window.Event("change", { bubbles: true }));
+    expect(buffer.entries()).toEqual([{ t: at(), kind: "change", target: "input (hidden)" }]);
+    buffer.uninstall();
+  });
+
+  it("withholds a submitted form's description", () => {
+    document.body.innerHTML = `<div class="sku-price"><form id="f" data-customer="ada@example.com"></form></div>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document.getElementById("f").dispatchEvent(new window.Event("submit", { bubbles: true }));
+    expect(buffer.entries()).toEqual([{ t: at(), kind: "submit", target: "form (hidden)" }]);
+    buffer.uninstall();
+  });
+
+  it("still records the breadcrumb, so the trail is not full of holes", () => {
+    document.body.innerHTML = `<div class="sku-price"><button id="a">Cost</button></div><button id="b">Rings</button>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    for (const id of ["a", "b"]) {
+      document.getElementById(id).dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    }
+    expect(buffer.entries().map((one) => one.target)).toEqual([
+      "button (hidden)",
+      "button#b 'Rings'",
+    ]);
+    buffer.uninstall();
+  });
+
+  it("describes everything outside the blanked elements as before", () => {
+    document.body.innerHTML = `<div class="sku-price">hidden</div><button id="b" data-view="rings">Rings</button>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document.getElementById("b").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffer.entries()[0].target).toBe(`button#b[data-view="rings"] 'Rings'`);
+    buffer.uninstall();
+  });
+
+  it("keeps the selectors it can use when one of them is not a selector at all", () => {
+    document.body.innerHTML = `<div class="sku-price"><button id="a">Cost</button></div>`;
+    const buffer = installBreadcrumbBuffer({
+      target: window,
+      doc: document,
+      now: at,
+      blank: ["!!! not a selector", ".sku-price"],
+    });
+    document.getElementById("a").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffer.entries()[0].target).toBe("button (hidden)");
+    buffer.uninstall();
+  });
+
+  it("describes normally when no blank selectors were given", () => {
+    document.body.innerHTML = `<div class="sku-price"><button id="a">Cost</button></div>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at });
+    document.getElementById("a").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffer.entries()[0].target).toBe("button#a 'Cost'");
+    buffer.uninstall();
+  });
+});
+
+describe("usableSelector", () => {
+  it("drops what the engine cannot parse and keeps the rest", () => {
+    expect(usableSelector(document, [".a", "!!!", "#b", "", null, 7])).toBe(".a,#b");
+    expect(usableSelector(document, [])).toBe("");
+    expect(usableSelector(document, undefined)).toBe("");
+  });
+});
+
+describe("hiddenTarget", () => {
+  it("names the tag and nothing else", () => {
+    expect(hiddenTarget(document.createElement("button"))).toBe("button (hidden)");
+    expect(hiddenTarget(null)).toBe("(hidden)");
+    expect(hiddenTarget({})).toBe("(hidden)");
   });
 });

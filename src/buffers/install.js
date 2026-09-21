@@ -67,6 +67,9 @@ export function installBuffers({ win = window, doc = win.document, capture = {} 
         target: win,
         doc,
         maskAllInputs: !!capture.maskAllInputs,
+        // The same selectors the recorder blocks on: a describer that reads an element's text,
+        // labels and data attributes has to honour them too.
+        blank: Array.isArray(capture.blank) ? capture.blank : [],
       }),
     installed,
   );
