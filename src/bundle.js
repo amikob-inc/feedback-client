@@ -2,17 +2,19 @@
 // part names the hub reads (amikob-inc/feedback-hub's service/src/intake.ts, read before writing
 // this file — it is the authority on part names, caps and error shapes, not the plan). Pure — no
 // DOM, no network, everything passed in as arguments — so every cap and every drop is testable in
-// plain Node. The caps are the hub's own `LIMITS`, copied field for field: anything this library
-// lets through over them comes back as a 413 (or, for a wrongly-typed image, a 400) naming the
-// part and failing the *whole* submission, so every cap here is checked before a part is built,
-// never assumed.
+// plain Node. The caps are the hub's own `LIMITS` for the parts this library sends, copied field
+// for field: anything this library lets through over them comes back as a 413 (or, for a
+// wrongly-typed image, a 400) naming the part and failing the *whole* submission, so every cap
+// here is checked before a part is built, never assumed. The hub's `dom` limit has no counterpart
+// here: the bespoke page copy was removed on 2026-09-21 (see the note at the top of the plan,
+// docs/superpowers/plans/2026-09-21-mission-16-client-library.md) and this library never sends
+// that part, so there is nothing to cap.
 import { byteLength } from "./bytes.js";
 import { CLIENT_ID } from "./version.js";
 
 export const CAPS = {
   report: 512 * 1024,
   screenshot: 5 * 1024 * 1024,
-  dom: 3 * 1024 * 1024,
   replay: 8 * 1024 * 1024,
   image: 5 * 1024 * 1024,
   images: 6,
@@ -44,7 +46,7 @@ const TRIM_ORDER = ["console", "network", "breadcrumbs", "errors"];
 
 // Builds the §5.3 report JSON from what the panel collected. Every field keeps whatever the
 // caller passed — this module does not re-derive or re-collect anything from the page (privacy
-// carries through: it must not reintroduce what the buffers or the DOM snapshot already stripped,
+// carries through: it must not reintroduce what the buffers and the recorder already stripped,
 // and the only way to be sure of that is to never touch the DOM at all). `reporter.id` and the
 // e-mail are only ever echoed for display: the hub's own intake.ts discards both and trusts only
 // the verified token (`sanitizeReporter` there keeps just `name` and `role`).
@@ -124,15 +126,9 @@ export function imageName(blob, index) {
 // recording out is an informed choice rather than a surprise. Names only what is actually
 // present; the console and network log are always named last because they are always sent when
 // capture is on (there is no separate opt-out for them the way there is for the recording).
-export function describeAttachments({
-  screenshot = null,
-  dom = null,
-  replay = null,
-  images = [],
-} = {}) {
+export function describeAttachments({ screenshot = null, replay = null, images = [] } = {}) {
   const parts = [];
   if (screenshot) parts.push("a screenshot of this page");
-  if (dom) parts.push("a copy of the page");
   if (replay) parts.push("a recording of the last minute or two");
   if (images.length === 1) parts.push("1 image you added");
   else if (images.length > 1) parts.push(`${images.length} images you added`);
@@ -141,15 +137,16 @@ export function describeAttachments({
 }
 
 // Assembles the multipart body `POST /v1/reports` expects (intake.ts's `form.get("report")`,
-// `"screenshot"`, `"dom"`, `"replay"`, and repeated `"image"` — field names checked against that
-// file, not guessed from the spec prose). Every part is checked against its own cap before it
-// goes in; nothing over cap is ever attached in the hope the hub is lenient (standing rule 4).
+// `"screenshot"`, `"replay"`, and repeated `"image"` — field names checked against that file, not
+// guessed from the spec prose; the `"dom"` part that file also accepts is optional there and this
+// library no longer sends one). Every part is checked against its own cap before it goes in;
+// nothing over cap is ever attached in the hope the hub is lenient (standing rule 4).
 //
 // Order of what gives way when the *bundle* (not any one part) is still over `caps.total`, again
 // least valuable first: the recording first (it is also the single biggest possible part, so it
-// is usually both the cheapest and the most effective thing to drop), then the page copy, then
-// the automatic screenshot, and only then the images the reporter deliberately chose to attach —
-// those are evidence the reporter picked out on purpose and so are the last thing to go.
+// is usually both the cheapest and the most effective thing to drop), then the automatic
+// screenshot, and only then the images the reporter deliberately chose to attach — those are
+// evidence the reporter picked out on purpose and so are the last thing to go.
 //
 // What the attachments compete for is `caps.total` minus the report's own *actual* size, not the
 // whole of its cap: reserving all of `caps.report` up front was tried first and wastes most of it
@@ -161,7 +158,7 @@ export function describeAttachments({
 // only be the same size or smaller than what was budgeted for it here. That is what keeps
 // `size <= caps.total` an actual guarantee rather than an approximation with a few bytes of slop.
 export function buildBundle(
-  { report, screenshot = null, dom = null, replay = null, images = [] },
+  { report, screenshot = null, replay = null, images = [] },
   caps = CAPS,
 ) {
   const dropped = [];
@@ -190,11 +187,6 @@ export function buildBundle(
     dropped.push("the screenshot (over its own limit)");
     keptScreenshot = null;
   }
-  let keptDom = dom;
-  if (keptDom && keptDom.size > caps.dom) {
-    dropped.push("the page copy (over its own limit)");
-    keptDom = null;
-  }
   let keptReplay = replay;
   if (keptReplay && keptReplay.size > caps.replay) {
     dropped.push("the recording (over its own limit)");
@@ -208,17 +200,12 @@ export function buildBundle(
   const budget = caps.total - byteLength(JSON.stringify(budgetedReport));
   const attachmentSize = () =>
     (keptScreenshot ? keptScreenshot.size : 0) +
-    (keptDom ? keptDom.size : 0) +
     (keptReplay ? keptReplay.size : 0) +
     keptImages.reduce((sum, blob) => sum + blob.size, 0);
 
   if (attachmentSize() > budget && keptReplay) {
     keptReplay = null;
     dropped.push("the recording (the bundle was too big)");
-  }
-  if (attachmentSize() > budget && keptDom) {
-    keptDom = null;
-    dropped.push("the page copy (the bundle was too big)");
   }
   if (attachmentSize() > budget && keptScreenshot) {
     keptScreenshot = null;
@@ -245,7 +232,6 @@ export function buildBundle(
   const form = new FormData();
   form.append("report", new Blob([json], { type: "application/json" }), "report.json");
   if (keptScreenshot) form.append("screenshot", keptScreenshot, "screenshot.png");
-  if (keptDom) form.append("dom", keptDom, "dom.html.gz");
   if (keptReplay) form.append("replay", keptReplay, "replay.json.gz");
   keptImages.forEach((blob, index) => form.append("image", blob, imageName(blob, index)));
 

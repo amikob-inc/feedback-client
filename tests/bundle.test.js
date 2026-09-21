@@ -68,7 +68,7 @@ describe("buildReport", () => {
 
   it("never echoes anything beyond what it was given: no DOM access, no extra fields", () => {
     // buildReport is pure — it must not go looking for cookies, headers or a query string on its
-    // own (privacy carries through: it can only pass along what the buffers and the snapshot
+    // own (privacy carries through: it can only pass along what the buffers and the recorder
     // already decided to keep). Passing a page/browser object with no such fields and checking
     // the output has nothing else on it is the closest a unit test gets to proving a negative.
     const report = buildReport({
@@ -208,19 +208,28 @@ describe("describeAttachments", () => {
     expect(
       describeAttachments({
         screenshot: png(1),
-        dom: gz(1),
         replay: gz(1),
         images: [png(1), png(1)],
       }),
     ).toBe(
-      "What will be sent: a screenshot of this page, a copy of the page, a recording of the last minute or two, 2 images you added, the console and network log.",
+      "What will be sent: a screenshot of this page, a recording of the last minute or two, 2 images you added, the console and network log.",
     );
   });
 
   it("names one image in the singular and drops what is absent", () => {
-    expect(
-      describeAttachments({ screenshot: null, dom: null, replay: null, images: [png(1)] }),
-    ).toBe("What will be sent: 1 image you added, the console and network log.");
+    expect(describeAttachments({ screenshot: null, replay: null, images: [png(1)] })).toBe(
+      "What will be sent: 1 image you added, the console and network log.",
+    );
+  });
+
+  it("never offers a copy of the page, whatever it is handed", () => {
+    // The bespoke page copy was removed on 2026-09-21 (three consecutive adversarial reviews got
+    // sensitive data through the snapshot). The reporter is told what is attached before they
+    // send, so this line must never grow the phrase back — not even if a caller left a `dom`
+    // argument behind after the removal.
+    expect(describeAttachments({ dom: gz(1), screenshot: png(1) })).toBe(
+      "What will be sent: a screenshot of this page, the console and network log.",
+    );
   });
 
   it("always names the console and network log, even with nothing else attached", () => {
@@ -233,7 +242,6 @@ describe("buildBundle", () => {
     ...CAPS,
     report: 4096,
     screenshot: 100,
-    dom: 100,
     replay: 100,
     image: 100,
     images: 2,
@@ -245,7 +253,6 @@ describe("buildBundle", () => {
       {
         report: buildReport(reportInput),
         screenshot: png(10),
-        dom: gz(10),
         replay: gz(10),
         images: [png(5), png(5)],
       },
@@ -254,10 +261,25 @@ describe("buildBundle", () => {
     expect(dropped).toEqual([]);
     expect(form.get("report")).toBeInstanceOf(Blob);
     expect(form.get("screenshot").size).toBe(10);
-    expect(form.get("dom").size).toBe(10);
     expect(form.get("replay").size).toBe(10);
     expect(form.getAll("image")).toHaveLength(2);
     expect(JSON.parse(await form.get("report").text()).client).toBe(CLIENT_ID);
+  });
+
+  it("sends no page copy, even when one is handed to it", () => {
+    // The `dom` part was removed on 2026-09-21: the library sends no bespoke copy of the
+    // reporter's page at all (evidence comes from the screenshot and the replay, whose own first
+    // event is a masked snapshot made by rrweb). The hub still accepts a `dom` part from any
+    // client that sends one — it is optional there, `form.get("dom")` guarded by an `instanceof
+    // File` check in service/src/intake.ts — so nothing stops this from silently coming back;
+    // this is the test that fails if it does.
+    const { form, dropped } = buildBundle(
+      { report: buildReport(reportInput), dom: gz(10), screenshot: png(10), images: [] },
+      smallCaps,
+    );
+    expect(form.get("dom")).toBe(null);
+    expect([...form.keys()].sort()).toEqual(["report", "screenshot"]);
+    expect(dropped).toEqual([]);
   });
 
   it("drops a part over its own cap and says so", () => {
@@ -265,7 +287,6 @@ describe("buildBundle", () => {
       {
         report: buildReport(reportInput),
         screenshot: png(200),
-        dom: gz(10),
         replay: gz(10),
         images: [],
       },
@@ -285,29 +306,31 @@ describe("buildBundle", () => {
   });
 
   it("drops the recording first when the bundle is over the total", () => {
-    // report + dom + screenshot alone (900 + 900 = 1,800 minus the report's own ~760 bytes) must
-    // stay under `total` so dropping just the recording is enough — a `total` that cannot even
-    // fit the report plus the two smaller attachments would make every implementation drop dom
-    // and screenshot too, no matter the drop order, which would test nothing about ordering.
-    const caps = { ...smallCaps, replay: 10_000, dom: 10_000, screenshot: 10_000, total: 1600 };
+    // report + screenshot + the one image (300 + 300 = 600, plus the report's own ~760 bytes)
+    // must stay under `total` so dropping just the recording is enough — a `total` that cannot
+    // even fit the report plus the two smaller attachments would make every implementation drop
+    // the screenshot and the image too, no matter the drop order, which would test nothing about
+    // ordering. The image is also what proves the recording goes before the reporter's own
+    // deliberate attachment, which is the last thing to go.
+    const caps = { ...smallCaps, replay: 10_000, screenshot: 10_000, image: 10_000, total: 1600 };
     const { form, dropped } = buildBundle(
       {
         report: buildReport(reportInput),
         screenshot: png(300),
-        dom: gz(300),
         replay: gz(900),
-        images: [],
+        images: [png(300)],
       },
       caps,
     );
     expect(form.get("replay")).toBe(null);
-    expect(form.get("dom")).not.toBe(null);
+    expect(form.get("screenshot")).not.toBe(null);
+    expect(form.getAll("image")).toHaveLength(1);
     expect(dropped).toContain("the recording (the bundle was too big)");
   });
 
   it("stamps capture.replay and capture.screenshot with what is actually attached", async () => {
     const { form } = buildBundle(
-      { report: buildReport(reportInput), screenshot: null, replay: null, dom: gz(10), images: [] },
+      { report: buildReport(reportInput), screenshot: null, replay: null, images: [] },
       smallCaps,
     );
     const sent = JSON.parse(await form.get("report").text());
@@ -345,7 +368,6 @@ describe("buildBundle", () => {
       {
         report: buildReport(reportInput),
         screenshot: png(1_500_000),
-        dom: gz(1_000_000),
         replay: gz(3_000_000),
         images: [png(600_000), png(600_000), png(600_000)],
       },
@@ -374,11 +396,13 @@ describe("buildBundle", () => {
     expect(form.get("report").size).toBeLessThanOrEqual(CAPS.report);
   });
 
-  it("uses the spec's caps by default", () => {
+  it("uses the spec's caps by default, and no longer carries one for a page copy", () => {
+    // The hub's own LIMITS still has `dom: 3 MB` (service/src/intake.ts) for a part this library
+    // stopped sending on 2026-09-21; a cap here for a part that is never built would be the last
+    // thread of the removed feature, so the object is asserted whole rather than key by key.
     expect(CAPS).toEqual({
       report: 512 * 1024,
       screenshot: 5 * 1024 * 1024,
-      dom: 3 * 1024 * 1024,
       replay: 8 * 1024 * 1024,
       image: 5 * 1024 * 1024,
       images: 6,

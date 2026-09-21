@@ -18,11 +18,14 @@ export class FeedbackError extends Error {
   }
 }
 
-// The hub's 413 message starts with the part it refused (service/src/intake.ts's checkSize).
+// The hub's 413 message starts with the part it refused (service/src/intake.ts's checkSize). The
+// hub also has a `dom` limit, for a page copy this library stopped sending on 2026-09-21: a part
+// that is never sent can never be refused, and telling a reporter to "leave the page copy out"
+// would name an attachment the panel does not have. An unknown part name falls through to the
+// generic "remove an attachment" message, which is the right answer for one.
 export const PART_NAMES = {
   report: "the report itself",
   screenshot: "the screenshot",
-  dom: "the page copy",
   replay: "the recording",
   image: "an image",
   bundle: "some of the attachments",

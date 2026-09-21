@@ -5,7 +5,6 @@
 // there is a missing feature, not a thrown OptionError.
 import { installBuffers } from "./buffers/install.js";
 import { CAPS, buildBundle, buildReport } from "./bundle.js";
-import { snapshotDom } from "./capture/dom.js";
 import { gzip } from "./capture/gzip.js";
 import { idle, serializeReplay, startReplay } from "./capture/replay.js";
 import { captureScreenshot } from "./capture/screenshot.js";
@@ -156,25 +155,6 @@ export function mountFeedback(rawOptions, deps = {}) {
     return captureScreenshot({ load: deps.loadScreenshot, target: doc.body });
   }
 
-  async function domPart() {
-    try {
-      const html = snapshotDom(doc, {
-        maskAllInputs: options.capture.maskAllInputs,
-        blank: options.capture.blank,
-      });
-      // snapshotDom's own contract is to never throw: any internal failure is caught, warned
-      // once under its own label, and answered with `undefined` instead of an exception. Passing
-      // that straight to gzip would stringify it into a real (bogus) "undefined" blob and attach
-      // it as if it were a genuine page copy, so a missing snapshot must become a missing dom
-      // part here, not a corrupted one.
-      if (typeof html !== "string") return null;
-      return await gzip(html);
-    } catch (err) {
-      warnOnce("page snapshot", err);
-      return null;
-    }
-  }
-
   async function replayPart() {
     if (!replay) return null;
     const serialized = serializeReplay(replay.segments);
@@ -209,7 +189,6 @@ export function mountFeedback(rawOptions, deps = {}) {
           ? await captureNow()
           : null;
     const replayBlob = fields.includeReplay === false ? null : await replayPart();
-    const domBlob = await domPart();
 
     const report = buildReport({
       app: options.app,
@@ -233,7 +212,7 @@ export function mountFeedback(rawOptions, deps = {}) {
       network: buffers.network(),
     });
 
-    const bundle = buildBundle({ report, screenshot, dom: domBlob, replay: replayBlob, images });
+    const bundle = buildBundle({ report, screenshot, replay: replayBlob, images });
     const answer = await transport.submit(bundle.form);
     return { id: answer.id, dropped: bundle.dropped };
   }

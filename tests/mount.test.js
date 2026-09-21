@@ -162,7 +162,11 @@ describe("submit", () => {
     expect(report.breadcrumbs.some((one) => one.target.includes("Save ring"))).toBe(true);
     expect(report.console.some((one) => one.text.includes("TypeError"))).toBe(true);
     expect(report.capture).toEqual({ replay: false, screenshot: false, maskAllInputs: false });
-    expect(form.get("dom")).not.toBe(null);
+    // A submit that would once have carried a gzipped copy of the page carries none: the `dom`
+    // part was removed on 2026-09-21, and what is left is still a report the hub accepts (its
+    // only required part is `report`; every attachment is optional — service/src/intake.ts).
+    expect(form.get("dom")).toBe(null);
+    expect([...form.keys()]).toEqual(["report"]);
     handle.destroy();
   });
 
@@ -218,19 +222,17 @@ describe("submit", () => {
     handle.destroy();
   });
 
-  // Standing rule 6, proven by mutation: snapshotDom's own contract is to answer `undefined`
-  // instead of throwing when the clone fails. Feeding that straight into gzip() would coerce it
-  // to the *string* "undefined" and attach a real, bogus "dom.html.gz" part — worse than sending
-  // nothing, because it looks like a genuine page copy. Reverting mount.js's `typeof html !==
-  // "string"` guard makes this test fail with a non-null "dom" part.
-  it("omits the dom part rather than sending a bogus blob when the snapshot itself fails", async () => {
+  // Nothing in submit() reads the live document any more beyond `pageContext` (path, title,
+  // viewport), so a page that is hostile to being cloned — the shape that used to cost the whole
+  // snapshot — is simply not this library's problem: the report still goes.
+  it("submits from a page that refuses to be cloned", async () => {
     const { handle, transport } = mount();
     const original = document.documentElement.cloneNode;
     document.documentElement.cloneNode = () => {
       throw new Error("hostile clone");
     };
     try {
-      await handle.submit({ text: "boom" });
+      await expect(handle.submit({ text: "boom" })).resolves.toMatchObject({ id: "report-1" });
     } finally {
       document.documentElement.cloneNode = original;
     }

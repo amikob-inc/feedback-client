@@ -1,9 +1,8 @@
 // The breadcrumb buffer (spec §5.2): the last 100 things the reporter did — clicks, field
 // changes, submits, route changes, tab visibility and going offline. This is the trail the triage
 // run replays in prose before it looks at anything else, so a breadcrumb names the thing that was
-// clicked rather than the pixel it was clicked at. Values are masked the same way the replay and
-// the DOM snapshot mask them (spec §5.7); a route breadcrumb carries path and hash, never a query
-// string.
+// clicked rather than the pixel it was clicked at. Values are masked the same way the replay
+// masks them (spec §5.7); a route breadcrumb carries path and hash, never a query string.
 import { Ring, cut } from "./ring.js";
 import { warnOnce } from "../warn.js";
 
