@@ -11,6 +11,14 @@
 // it applies to the recording. It did not, until the marker harness planted a marker in the text
 // of a button inside a blanked region and watched it come out in the report's breadcrumb trail
 // (tests/leak-matrix.test.js, channel/click-text).
+//
+// That fix only covered one direction. `capture.blank` is checked with `closest`, which walks
+// **up** to the nearest blanked ancestor; `textContent` and `el.labels` read **down** and
+// **across**. So a blanked price inside a clicked card, inside a submitted form, or in a
+// `<label for=…>` pointing at a field outside the region came back out verbatim (audit finding
+// F1; channel/click-text-nested, channel/submit-text, channel/change-label-outside). The rule
+// this file now holds to is the class, not the three instances: **no describer reads text out
+// of, or through, an element the app asked to blank, whichever direction it arrives from.**
 import { Ring, cut } from "./ring.js";
 import { blankSelector } from "../selectors.js";
 import { warnOnce } from "../warn.js";
@@ -22,7 +30,53 @@ export const MASKED = "•••";
 export const CLICK_TARGETS = "button, a, [role=button], [data-view]";
 const DATA_ATTRIBUTES = 3;
 
-export function describeClickTarget(el) {
+const flatten = (text) =>
+  String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+// `closest` reads **up**; `textContent` reads **down**. A describer that mixes the two publishes
+// a blanked price the moment the thing that was clicked is the card the price sits in rather than
+// the price itself — which is the shape a card-based dashboard has, and which the ancestor check
+// alone never sees. So an element's text is assembled from its own text nodes and those of its
+// unblanked descendants: a blanked subtree is skipped whole, exactly as the recorder skips it,
+// and the trail keeps whatever the element said around it ("Open ring", not "Open ring GBP
+// 1,240"). With no blank selector, or with nothing blanked inside, this is `textContent` to the
+// character — which is what keeps the ordinary case unchanged.
+export function visibleText(el, blankSelector = "") {
+  if (!el) return "";
+  if (!blankSelector || !containsBlanked(el, blankSelector)) return flatten(el.textContent);
+  const parts = [];
+  collectText(el, blankSelector, parts);
+  return flatten(parts.join(" "));
+}
+
+function containsBlanked(el, selector) {
+  try {
+    return typeof el.querySelector === "function" && !!el.querySelector(selector);
+  } catch {
+    return false;
+  }
+}
+
+function collectText(node, selector, parts) {
+  for (const child of node.childNodes || []) {
+    if (child.nodeType === 3) parts.push(child.nodeValue || "");
+    else if (child.nodeType === 1 && !matchesBlank(child, selector)) {
+      collectText(child, selector, parts);
+    }
+  }
+}
+
+function matchesBlank(el, selector) {
+  try {
+    return typeof el.matches === "function" && el.matches(selector);
+  } catch {
+    return false;
+  }
+}
+
+export function describeClickTarget(el, { blankSelector = "" } = {}) {
   if (!el || !el.tagName) return "";
   let out = el.tagName.toLowerCase();
   if (el.id) out += `#${el.id}`;
@@ -34,15 +88,19 @@ export function describeClickTarget(el) {
   out += data.join("");
   const aria = typeof el.getAttribute === "function" ? el.getAttribute("aria-label") : null;
   if (aria) out += ` aria-label="${aria}"`;
-  const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+  const text = visibleText(el, blankSelector);
   if (text) out += ` '${cut(text, CLICK_TEXT_MAX)}'`;
   return out;
 }
 
-export function fieldLabel(el) {
+export function fieldLabel(el, { blankSelector = "" } = {}) {
   const labels = el.labels;
-  if (labels && labels.length && labels[0].textContent) {
-    const text = labels[0].textContent.replace(/\s+/g, " ").trim();
+  // `el.labels` resolves a `<label for=…>` anywhere in the document, so a field in ordinary page
+  // content can be labelled from inside a blanked region. The label is a page element like any
+  // other and goes through the same two checks the click target gets — is it blanked, and does it
+  // contain anything blanked — before a character of it is read.
+  if (labels && labels.length && !isBlankedElement(labels[0], blankSelector)) {
+    const text = visibleText(labels[0], blankSelector);
     if (text) return text;
   }
   const aria = typeof el.getAttribute === "function" ? el.getAttribute("aria-label") : null;
@@ -82,7 +140,7 @@ export function fieldValue(el, { maskAllInputs = false } = {}) {
 
 export function describeFieldChange(el, opts) {
   if (!el || !el.tagName) return "";
-  return `${fieldLabel(el)} = ${fieldValue(el, opts)}`;
+  return `${fieldLabel(el, opts)} = ${fieldValue(el, opts)}`;
 }
 
 function closestTarget(node) {
@@ -134,10 +192,25 @@ export function installBreadcrumbBuffer({
 
   const path = () => `${target.location.pathname}${target.location.hash}`;
   const describe = (el, full) => (isBlanked(el) ? hiddenTarget(el) : full(el));
-  const onClick = (e) => add("click", () => describe(closestTarget(e.target), describeClickTarget));
+  // Both checks, in both directions, for all three describers: `describe` refuses an element at
+  // or inside a blanked one, and `blankSelector` goes on to the describer so it also refuses to
+  // read down into one.
+  const onClick = (e) =>
+    add("click", () =>
+      describe(closestTarget(e.target), (el) =>
+        describeClickTarget(el, { blankSelector: selector }),
+      ),
+    );
   const onChange = (e) =>
-    add("change", () => describe(e.target, (el) => describeFieldChange(el, { maskAllInputs })));
-  const onSubmit = (e) => add("submit", () => describe(e.target, describeClickTarget));
+    add("change", () =>
+      describe(e.target, (el) =>
+        describeFieldChange(el, { maskAllInputs, blankSelector: selector }),
+      ),
+    );
+  const onSubmit = (e) =>
+    add("submit", () =>
+      describe(e.target, (el) => describeClickTarget(el, { blankSelector: selector })),
+    );
   const onRoute = () => add("route", path);
   const onVisibility = () => add("visibility", () => doc.visibilityState);
   const onOnline = () => add("connection", () => "online");

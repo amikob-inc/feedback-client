@@ -151,7 +151,7 @@ describe("what capture.blank is worth", () => {
     const clicks = (run) =>
       run.results.filter((one) => String(one.position.channel || "").startsWith("click-"));
     expect(clicks(runs.hardened).filter((one) => one.hits.length)).toEqual([]);
-    expect(clicks(runs["mask-without-blank"]).filter((one) => one.hits.length).length).toBe(4);
+    expect(clicks(runs["mask-without-blank"]).filter((one) => one.hits.length).length).toBe(5);
   });
 });
 

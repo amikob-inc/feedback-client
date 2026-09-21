@@ -268,6 +268,15 @@ const CHANNELS = [
   { id: "change-value", kind: "breadcrumb" },
   { id: "change-password", kind: "breadcrumb" },
   { id: "change-file-label", kind: "breadcrumb" },
+  // The other direction. Everything above puts the blanked element *around* the one being
+  // described, which is the direction `closest` walks; these put it *inside* it, which is the
+  // direction `textContent` walks — a price in a span inside the clickable card, a blanked field
+  // inside a submitted form, a `<label for=…>` inside a blanked region pointing at a field
+  // outside it.
+  { id: "click-text-nested", kind: "breadcrumb" },
+  { id: "submit-text", kind: "breadcrumb" },
+  { id: "submit-blanked", kind: "breadcrumb" },
+  { id: "change-label-outside", kind: "breadcrumb" },
   { id: "console-arg", kind: "console" },
   { id: "network-path", kind: "network" },
   { id: "network-query", kind: "network" },

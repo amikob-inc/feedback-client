@@ -177,6 +177,22 @@ const CHANNEL_FATES = {
   "change-aria": ["the aria-label of a changed field", { blankDependent: true }],
   "change-name": ["the name of a changed field", { blankDependent: true }],
   "change-file-label": ["the label of a changed file field", { blankDependent: true }],
+  "click-text-nested": [
+    "the text of a blanked element inside the clicked one",
+    { blankDependent: true },
+  ],
+  "submit-text": [
+    "the text of a blanked element inside a submitted form",
+    { blankDependent: true },
+  ],
+  "submit-blanked": [
+    "the text of a submitted form inside a blanked region",
+    { blankDependent: true },
+  ],
+  "change-label-outside": [
+    "the <label for=…> of a changed field, when the label is blanked and the field is not",
+    { blankDependent: true },
+  ],
   "change-password": [
     "a password value, in every buffer, under every setting",
     { expect: "withheld" },

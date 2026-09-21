@@ -134,16 +134,63 @@ function plantChannels(root, by) {
   passworded.value = by.get("change-password");
   ordinary.append(valued, passworded);
 
+  // The blanked element inside the described one, which is the shape a card-based dashboard
+  // really has: the row is the clickable, the price is a span inside it, and the click lands on
+  // the span. `closestTarget` walks up to a clickable that is not blanked; a describer that then
+  // reads `textContent` walks straight back down through the blanked span.
+  const nestedLink = document.createElement("a");
+  nestedLink.setAttribute("data-view", "ring");
+  const nestedPrice = blankedSpan(by.get("click-text-nested"));
+  nestedLink.append(document.createTextNode("Open ring "), nestedPrice);
+  ordinary.appendChild(nestedLink);
+
+  // A form in ordinary page content whose fields are blanked: the submit describer is handed the
+  // <form> and flattens its whole subtree.
+  const nestedForm = document.createElement("form");
+  nestedForm.append(blankedSpan(by.get("submit-text")), button("Save"));
+  ordinary.appendChild(nestedForm);
+
+  // And the same channel from the other direction: the form itself inside the blanked region.
+  const blankedForm = document.createElement("form");
+  blankedForm.appendChild(document.createTextNode(`Margin ${by.get("submit-blanked")}`));
+  blanked.appendChild(blankedForm);
+
+  // A field outside the blanked region whose <label for=…> is inside it. `el.labels` resolves a
+  // label anywhere in the document, so nothing about the field says the label is blanked.
+  const outsideLabel = document.createElement("label");
+  outsideLabel.setAttribute("for", "fbh-outside-field");
+  outsideLabel.textContent = by.get("change-label-outside");
+  blanked.appendChild(outsideLabel);
+  const outsideField = field("text", { id: "fbh-outside-field", name: "outside" });
+  ordinary.appendChild(outsideField);
+
   document.title = `Rings — ${by.get("document-title")}`;
   window.history.replaceState({}, "", `/rings?token=${by.get("location-query")}`);
 
   return {
     markers: by,
     elements: {
-      clicks: [clickText, clickAria, clickData, clickId],
-      changes: [labelledInput, placeheld, arialled, named, fileInput, valued, passworded],
+      clicks: [clickText, clickAria, clickData, clickId, nestedPrice],
+      changes: [
+        labelledInput,
+        placeheld,
+        arialled,
+        named,
+        fileInput,
+        valued,
+        passworded,
+        outsideField,
+      ],
+      submits: [nestedForm, blankedForm],
     },
   };
+}
+
+function blankedSpan(text) {
+  const el = document.createElement("span");
+  el.className = BLANK_CLASS;
+  el.textContent = text;
+  return el;
 }
 
 function button(text) {
@@ -283,6 +330,9 @@ async function runInteractions(channels) {
   }
   for (const el of channels.elements.changes) {
     el.dispatchEvent(new window.Event("change", { bubbles: true }));
+  }
+  for (const el of channels.elements.submits) {
+    el.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
   }
   // The console and network buffers take what the app hands them, so the app has to hand them
   // something: one log line and two requests, one with the marker in the path and one with it in

@@ -388,6 +388,92 @@ describe("installBreadcrumbBuffer with capture.blank", () => {
   });
 });
 
+// The three above all have the blanked element *around* the thing being described, which is the
+// direction `closest` walks. A describer reads `textContent`, which walks the other way — so a
+// blanked price inside a clickable card, or inside a submitted form, or in a <label for=…> that
+// points at a field outside the region, came back out verbatim. Class of defect, not three
+// instances: no describer may read text out of, or through, an element the app asked to blank,
+// whichever direction it arrives from.
+describe("installBreadcrumbBuffer with a blanked element inside the described one", () => {
+  const blank = [".sku-price"];
+
+  it("withholds a blanked price inside the clicked card, and keeps the rest of the label", () => {
+    document.body.innerHTML = `<a id="row" data-view="ring">Open ring <span class="sku-price">GBP 1,240 cost</span></a>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document
+      .querySelector(".sku-price")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const [entry] = buffer.entries();
+    expect(entry.target).not.toContain("1,240");
+    expect(entry.target).toBe(`a#row[data-view="ring"] 'Open ring'`);
+    buffer.uninstall();
+  });
+
+  it("withholds blanked fields inside a submitted form", () => {
+    document.body.innerHTML = `<form id="f"><span class="sku-price">margin 42% ada@example.com</span><button>Save</button></form>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document.getElementById("f").dispatchEvent(new window.Event("submit", { bubbles: true }));
+    const [entry] = buffer.entries();
+    expect(entry.target).not.toContain("42%");
+    expect(entry.target).not.toContain("ada@example.com");
+    expect(entry.target).toBe("form#f 'Save'");
+    buffer.uninstall();
+  });
+
+  it("withholds a label that lives inside a blanked region, whatever the field is", () => {
+    // `el.labels` resolves a `<label for=…>` anywhere in the document, so nothing about the field
+    // itself says the label it is about to read is blanked.
+    document.body.innerHTML = `<div class="sku-price"><label for="c">Cost price GBP</label></div><input id="c" name="cost_gbp">`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    const input = document.getElementById("c");
+    input.value = "1240.00";
+    input.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const [entry] = buffer.entries();
+    expect(entry.target).not.toContain("Cost price");
+    // The field itself is not blanked, so it is still named — by its own name attribute, which is
+    // markup the app chose — and its value still follows maskAllInputs.
+    expect(entry.target).toBe(`cost_gbp = '1240.00'`);
+    buffer.uninstall();
+  });
+
+  it("reads the whole text when nothing inside it is blanked", () => {
+    document.body.innerHTML = `<a id="row" data-view="ring">Open ring <span>no 1 secret</span></a>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document.querySelector("span").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffer.entries()[0].target).toBe(`a#row[data-view="ring"] 'Open ring no 1 secret'`);
+    buffer.uninstall();
+  });
+
+  it("falls back to the tag alone when the blanked part is all there was", () => {
+    document.body.innerHTML = `<button id="b"><span class="sku-price">GBP 1,240</span></button>`;
+    const buffer = installBreadcrumbBuffer({ target: window, doc: document, now: at, blank });
+    document.querySelector("span").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(buffer.entries()[0].target).toBe("button#b");
+    buffer.uninstall();
+  });
+});
+
+describe("describeClickTarget and fieldLabel with a blankSelector", () => {
+  it("skips a blanked subtree and keeps the text around it", () => {
+    document.body.innerHTML = `<a id="row">Open <span class="p">1240</span> now</a>`;
+    const el = document.getElementById("row");
+    expect(describeClickTarget(el, { blankSelector: ".p" })).toBe("a#row 'Open now'");
+    expect(describeClickTarget(el)).toBe("a#row 'Open 1240 now'");
+  });
+
+  it("falls through to the field's own attributes when its label is blanked", () => {
+    document.body.innerHTML = `<div class="p"><label for="c">Cost</label></div><input id="c" aria-label="cost field">`;
+    const el = document.getElementById("c");
+    expect(fieldLabel(el, { blankSelector: ".p" })).toBe("cost field");
+    expect(fieldLabel(el)).toBe("Cost");
+  });
+
+  it("reads a label that is not blanked but contains a blanked part", () => {
+    document.body.innerHTML = `<label for="c">Cost <span class="p">1240</span></label><input id="c">`;
+    expect(fieldLabel(document.getElementById("c"), { blankSelector: ".p" })).toBe("Cost");
+  });
+});
+
 describe("isBlankedElement", () => {
   it("is true for the element itself and for anything inside it", () => {
     document.body.innerHTML = '<div class="b"><span><em id="deep">x</em></span></div><p id="out"/>';
