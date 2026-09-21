@@ -277,6 +277,10 @@ const CHANNELS = [
   { id: "submit-text", kind: "breadcrumb" },
   { id: "submit-blanked", kind: "breadcrumb" },
   { id: "change-label-outside", kind: "breadcrumb" },
+  // The error buffer, which is always on, cannot be switched off, and puts a message and a stack
+  // straight into the report JSON. It had no channel at all (audit finding F5).
+  { id: "error-message", kind: "error" },
+  { id: "error-stack", kind: "error" },
   { id: "console-arg", kind: "console" },
   { id: "network-path", kind: "network" },
   { id: "network-query", kind: "network" },
@@ -632,6 +636,52 @@ function placeOf(zone) {
   if (zone === "sensitive") return `inside a blanked element`;
   if (zone === "blanked") return `on the blanked element itself`;
   return "in ordinary page content";
+}
+
+// Positions planted a second time, after the library has mounted and the recorder has taken its
+// full snapshot. Everything else in this file is planted before mount, so rrweb's *mutation* path
+// — `processMutation`, and `serializeNodeWithId` with `skipChild: true, newlyAddedElement: true`,
+// with its own masking and its own `isBlocked(..., checkAncestors=false)` — was never exercised.
+// For a dashboard that renders its views after load, that path carries most of the recording
+// (audit finding F6).
+//
+// The subset is chosen to cover both answers: the withheld ones prove the masking and blocking
+// hold on that path, and the published ones prove the path is recording at all — without them a
+// mutation path that had quietly stopped working would read as a clean result.
+export const MUTATION_SUBSET = [
+  "in/plain/text/ordinary",
+  "in/plain/text/sensitive",
+  "attr/title/ordinary",
+  "attr/title/sensitive",
+  "attr/class/blanked",
+  "attr/srcdoc/ordinary",
+  "attr/href-query/ordinary",
+  "input/text/property/ordinary",
+  "input/password/attribute/ordinary",
+  "input/password/property/ordinary",
+  "input/hidden/property/ordinary",
+  "input/file/property/ordinary",
+  "input-cleared/ordinary",
+  "input-cleared-password/ordinary",
+  "contenteditable/sensitive",
+];
+
+export function mutationPositions(positions) {
+  const by = new Map(positions.map((one) => [one.id, one]));
+  const out = [];
+  for (const id of MUTATION_SUBSET) {
+    const position = by.get(id);
+    // A caller can pass a short list of its own (the self-test does), and then there is nothing
+    // here to re-plant. A typo in the list above is caught by the count assertion in
+    // tests/leak-matrix.test.js, not silently dropped.
+    if (position)
+      out.push({
+        ...position,
+        phase: "after mount",
+        where: `${position.where}, added after mount`,
+      });
+  }
+  return out;
 }
 
 // The automatic screenshot, which `capture.screenshot` leaves **on** by default and which the

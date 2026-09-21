@@ -207,6 +207,14 @@ const CHANNEL_FATES = {
     { expect: "withheld" },
   ],
   "change-value": ["a field value in a breadcrumb follows maskAllInputs", { maskDependent: true }],
+  // Published, and written down rather than left implicit. An uncaught error's message and stack
+  // are the most useful bytes in a report, and an error message routinely interpolates the value
+  // that caused it ("cannot price ring SKU-1201 at 1240.00"), so an app whose errors carry record
+  // data is publishing it here. There is no switch: `capture.console` and `capture.network` can be
+  // turned off, the error buffer cannot. That is the decision, and this is where it is recorded
+  // (audit finding F5).
+  "error-message": ["an uncaught error's message: what the report is for", { expect: "published" }],
+  "error-stack": ["an uncaught error's stack frames", { expect: "published" }],
   "console-arg": [
     "what the app itself logged: the console buffer's whole purpose",
     { expect: "published" },

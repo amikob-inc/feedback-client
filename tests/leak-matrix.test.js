@@ -8,12 +8,22 @@
 // names its own position; a marker that should have reached one and did not means the capture, or
 // this harness, has quietly stopped working. Both fail.
 //
-// Six settings combinations run here because the whole matrix costs about two and a half seconds;
+// Seven settings combinations run here, plus a run of its own for the automatic screenshot;
 // `pnpm test:leaks` runs the same thing and writes the full per-position table to leak-report.txt
 // for a person to read.
+//
+// Two things are planted that the first version of this file did not have: a second copy of a
+// subset of the positions, added *after* mount so rrweb's mutation path is exercised rather than
+// assumed, and the screenshot, captured for real instead of substituted with a PNG the harness
+// built itself.
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BLANK_SELECTOR, buildPositions, screenshotPositions } from "./lib/markers.js";
+import {
+  BLANK_SELECTOR,
+  MUTATION_SUBSET,
+  buildPositions,
+  screenshotPositions,
+} from "./lib/markers.js";
 import { DEFAULT_SETTINGS, formatScan, runCapture, scan } from "./lib/capture-harness.js";
 
 const positions = buildPositions();
@@ -61,9 +71,22 @@ afterAll(() => {
 describe("the harness itself", () => {
   it("plants one unique marker in every position", () => {
     const planted = runs.hardened.results.length;
-    expect(planted).toBe(positions.length);
+    // The catalogue, plus the subset planted a second time after mount so rrweb's mutation path
+    // is exercised rather than assumed. An id in MUTATION_SUBSET that no longer names a real
+    // position would otherwise drop out of the run in silence.
+    expect(planted).toBe(positions.length + MUTATION_SUBSET.length);
     expect(planted).toBeGreaterThan(250);
     expect(new Set(runs.hardened.results.map((one) => one.marker)).size).toBe(planted);
+  });
+
+  it("exercises the mutation path as well as the snapshot path", () => {
+    const afterMount = runs.hardened.results.filter((one) => one.position.phase === "after mount");
+    expect(afterMount.length).toBe(MUTATION_SUBSET.length);
+    // Both answers, or the withheld ones would be satisfied by a mutation path that had quietly
+    // stopped recording altogether.
+    expect(afterMount.filter((one) => one.fate.expect === "published").length).toBeGreaterThan(1);
+    expect(afterMount.filter((one) => one.fate.expect === "withheld").length).toBeGreaterThan(5);
+    expect(afterMount.filter((one) => one.hits.length).length).toBeGreaterThan(1);
   });
 
   it("reads every part of the bundle back, including the compressed one", () => {

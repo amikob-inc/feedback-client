@@ -31,9 +31,16 @@ export const ALWAYS_MASKED_INPUTS = { password: true, hidden: true, file: true }
 // here is what lets the three above be added. Found by the marker harness
 // (tests/leak-matrix.test.js), not by reading rrweb.
 //
-// `submit`, `button`, `reset` and `image` are deliberately absent: their value is the button's
-// visible label, not anything a person typed, and masking it would put `*****` on a button in the
-// replay for no gain. (rrweb ignores the first two for masking in any case.)
+// Six kinds are deliberately absent, and the reason is the same for all six: their `value` is
+// markup rather than anything a person typed. `submit`, `button`, `reset` and `image` carry the
+// button's visible label, so masking it would put `*****` on a button in the replay for no gain.
+// `checkbox` and `radio` carry the option's key, and what is private about them is which one is
+// checked — which rrweb publishes as `attributes.checked` with no option to consult, and which is
+// therefore covered by `capture.blank` or not at all. Naming them here would change nothing in the
+// snapshot path (rrweb skips the masking branch for both, record.js:1080) and would take effect
+// only on the mutation path (record.js:2172-2182), so the same field would be masked or not
+// depending on when it was added to the page. Left out on purpose, and this is the reason (audit
+// finding F8).
 export const MASKABLE_INPUTS = [
   "color",
   "date",

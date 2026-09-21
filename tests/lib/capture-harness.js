@@ -22,6 +22,7 @@ import {
   BLANK_SELECTOR,
   buildPositions,
   createMinter,
+  mutationPositions,
   randomNonce,
 } from "./markers.js";
 import { expectedFate } from "./fates.js";
@@ -334,6 +335,14 @@ export async function runCapture({
   await Promise.all(pending);
   await settle();
 
+  // The same handful of positions again, now that the recorder is running and has taken its full
+  // snapshot: these reach the recording through rrweb's mutation path, which is different code
+  // from the snapshot path and carries most of a dashboard's session (see MUTATION_SUBSET).
+  for (const [marker, position] of plantInto(root, mutationPositions(positions), mint)) {
+    registry.set(marker, position);
+  }
+  await settle();
+
   if (interact && channels) await runInteractions(channels);
   await settle();
 
@@ -374,6 +383,10 @@ async function runInteractions(channels) {
   for (const el of channels.elements.submits) {
     el.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
   }
+  // The error buffer is always on and takes whatever the page throws. Both halves of what it
+  // records are planted: the message, and a stack frame — through a function named after the
+  // marker, which is the closest a test can get to "a stack frame says something about the app".
+  throwMarkedError(channels.markers.get("error-message"), channels.markers.get("error-stack"));
   // The console and network buffers take what the app hands them, so the app has to hand them
   // something: one log line and two requests, one with the marker in the path and one with it in
   // the query string. Both requests fail, which is what the network buffer records.
@@ -383,6 +396,20 @@ async function runInteractions(channels) {
   window.history.pushState({}, "", `#${channels.markers.get("route-hash")}`);
   window.history.pushState({}, "", `/rings?token=${channels.markers.get("route-query")}`);
   window.history.replaceState({}, "", `/rings?token=${channels.markers.get("location-query")}`);
+}
+
+function throwMarkedError(messageMarker, stackMarker) {
+  const named = {
+    [`render${stackMarker}`]: () => {
+      throw new Error(`cannot price ring at ${messageMarker}`);
+    },
+  }[`render${stackMarker}`];
+  try {
+    named();
+  } catch (error) {
+    // The event a browser fires for an uncaught error, which is what the buffer listens for.
+    window.dispatchEvent(new window.ErrorEvent("error", { error, message: error.message }));
+  }
 }
 
 async function failedFetch(url) {
@@ -456,6 +483,13 @@ export function scan({ parts, registry, settings }) {
   return { results, leaked, missing, parts, settings };
 }
 
+// A position planted twice — once before mount and once through a mutation afterwards — is two
+// entries in the registry with the same id, so the phase has to be printed or a failure cannot be
+// told apart from its twin.
+function label(position) {
+  return position.phase ? `${position.id} (${position.phase})` : position.id;
+}
+
 function contextAt(text, at, length) {
   const from = Math.max(0, at - CONTEXT);
   const to = Math.min(text.length, at + length + CONTEXT);
@@ -477,7 +511,7 @@ export function formatScan(result, { title = "marker scan", verbose = false } = 
   );
   for (const one of result.leaked) {
     lines.push("");
-    lines.push(`  LEAK  ${one.position.id}`);
+    lines.push(`  LEAK  ${label(one.position)}`);
     lines.push(`        marker   ${one.marker}`);
     lines.push(`        planted  ${one.position.where}`);
     lines.push(`        expected withheld — ${one.fate.why}`);
@@ -488,7 +522,7 @@ export function formatScan(result, { title = "marker scan", verbose = false } = 
   }
   for (const one of result.missing) {
     lines.push("");
-    lines.push(`  MISSING  ${one.position.id}`);
+    lines.push(`  MISSING  ${label(one.position)}`);
     lines.push(`           marker   ${one.marker}`);
     lines.push(`           planted  ${one.position.where}`);
     lines.push(`           expected published — ${one.fate.why}`);
@@ -501,7 +535,7 @@ export function formatScan(result, { title = "marker scan", verbose = false } = 
     for (const one of result.results) {
       const where = one.hits.length ? [...new Set(one.hits.map((hit) => hit.part))].join("+") : "—";
       const mark = one.fate.gap ? "GAP" : one.fate.expect;
-      lines.push(`  ${mark.padEnd(10)}${where.padEnd(22)}${one.position.id}`);
+      lines.push(`  ${mark.padEnd(10)}${where.padEnd(22)}${label(one.position)}`);
     }
   }
   return lines.join("\n");
