@@ -13,7 +13,7 @@
 import { CAPS } from "../bundle.js";
 import { isRetryable, labelContext, needsReply, statusLabel, statusTone } from "../status.js";
 import { warnOnce } from "../warn.js";
-import { el, firstLine, relativeTime } from "./dom.js";
+import { activeWithin, el, firstLine, relativeTime } from "./dom.js";
 
 export const POLL_MS = 30000;
 
@@ -182,6 +182,11 @@ export function renderRow(doc, item, handlers = {}, { me = null, now = new Date(
           handlers.onReply(item.id, box.value, {
             message,
             setBusy: (busy) => {
+              // Disabling the control the reporter's own focus is on drops that focus to <body>,
+              // outside the panel's shadow root and so outside the dialog's focus trap and its
+              // Escape. The row's status line has just been given the words to say, so it is
+              // both displayed and the right place to land.
+              if (busy && activeWithin(row)) message.focus();
               send.disabled = busy;
               box.disabled = busy;
             },
@@ -202,6 +207,7 @@ export function renderRow(doc, item, handlers = {}, { me = null, now = new Date(
           handlers.onRetry(item.id, {
             message,
             setBusy: (busy) => {
+              if (busy && activeWithin(row)) message.focus();
               retryButton.disabled = busy;
             },
           });
@@ -260,7 +266,7 @@ export function createList({ api, options, doc, now = () => new Date() }) {
   // for that row may not have changed at all — a poll rebuilding it for no reason is exactly the
   // bug this guards against.
   function isMidEdit(row) {
-    if (row.contains(doc.activeElement)) return true;
+    if (activeWithin(row)) return true;
     const draft = row.querySelector("[data-reply]");
     return !!draft && draft.value.trim() !== "";
   }
@@ -332,7 +338,7 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     const item = items.find((one) => one.id === id);
     const old = rowNode(id);
     if (!item || !old) return;
-    const hadFocus = old.contains(doc.activeElement);
+    const hadFocus = !!activeWithin(old);
     const fresh = renderRow(doc, item, handlers(), context());
     if (announce) {
       const msg = fresh.querySelector(".fbh-row-message");
@@ -351,8 +357,10 @@ export function createList({ api, options, doc, now = () => new Date() }) {
   }
 
   async function onReply(id, text, ctx) {
-    ctx.setBusy(true);
+    // The words before the busy state: the row's status line is `display: none` while it is
+    // empty, and setBusy moves focus onto it as it disables the button underneath.
     ctx.message.textContent = "Sending…";
+    ctx.setBusy(true);
     try {
       const answer = await api.reply(id, text);
       applyUpdate(
@@ -371,8 +379,8 @@ export function createList({ api, options, doc, now = () => new Date() }) {
   }
 
   async function onRetry(id, ctx) {
-    ctx.setBusy(true);
     ctx.message.textContent = "Retrying…";
+    ctx.setBusy(true);
     try {
       const answer = await api.retry(id);
       applyUpdate(

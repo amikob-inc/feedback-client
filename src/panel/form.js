@@ -13,7 +13,7 @@ import {
 import { defaultSection } from "../options.js";
 import { warnOnce } from "../warn.js";
 import { openAnnotator as defaultOpenAnnotator } from "./annotate.js";
-import { clear, el } from "./dom.js";
+import { activeWithin, clear, el } from "./dom.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
 
@@ -341,7 +341,11 @@ export function createForm({
   // old Draw button is already disconnected and `stop` correctly leaves it alone); Cancel, Escape
   // and a load failure never touch the strip, so they need this to get back to where they started.
   async function annotate(blob, onDone) {
-    const trigger = doc.activeElement && doc.activeElement !== doc.body ? doc.activeElement : null;
+    // The control that opened the editor, looked up through the form's own root rather than the
+    // document's: inside the shadow root `doc.activeElement` is the host element, so asking the
+    // document would hand back the panel's wrapper and "focus goes back where it came from"
+    // would put it on something that cannot hold focus at all.
+    const trigger = activeWithin(element);
     annotatorMount.hidden = false;
     element.classList.add("fbh-form-annotating");
     const stop = () => {
@@ -420,6 +424,13 @@ export function createForm({
 
   function setBusy(value) {
     busy = value;
+    // Disabling the control that currently holds focus drops that focus to <body> — outside the
+    // dialog, and in the built-in panel outside the shadow root altogether, which takes the
+    // dialog's Escape and its focus trap with it: Tab would walk into the page behind the modal
+    // and Escape would no longer close anything. The status line is about to say "Sending…", so
+    // that is where focus goes instead. Found in a real browser; jsdom leaves focus alone when an
+    // element is disabled, so no test in this repository could have seen it.
+    if (value && activeWithin(element) === submitButton) message.focus();
     submitButton.disabled = value;
     submitButton.textContent = value ? "Sending…" : "Send report";
     // A screen reader that has already moved focus away from the message region still gets the
@@ -435,7 +446,7 @@ export function createForm({
     // no further notice to a screen reader. Move focus to the status line first — it is about to
     // read "Sending…", so a keyboard reporter lands somewhere deliberate and announced, never on
     // nothing.
-    if (retrySlot.contains(doc.activeElement)) message.focus();
+    if (activeWithin(retrySlot)) message.focus();
     clear(retrySlot);
   }
 
@@ -468,8 +479,12 @@ export function createForm({
       textarea.focus();
       return;
     }
-    setBusy(true);
+    // The words first, then the busy state. The status line is `display: none` while it is empty
+    // (see the stylesheet), an element that is not displayed cannot take focus, and setBusy hands
+    // focus to it in the same breath as it disables the button underneath it — so with these two
+    // the other way round the hand-off goes nowhere and focus lands on <body> instead.
     say("Sending…");
+    setBusy(true);
     const fields = {
       section: sectionSelect.value,
       type: typeSelect.value,

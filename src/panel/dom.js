@@ -18,6 +18,19 @@ export function el(doc, tag, attrs = {}, children = []) {
   return node;
 }
 
+// Which element inside `node` holds keyboard focus, or null. `document.activeElement` is the
+// wrong question once the panel is inside a shadow root: it answers with the *host* element,
+// whatever is focused within the shadow tree, so `node.contains(document.activeElement)` is false
+// however deep inside `node` the focus really is — and every guard written that way quietly stops
+// working in the built-in panel while still passing in a test that mounts the same component
+// straight into the document. `getRootNode()` returns whichever root this subtree actually lives
+// in, shadow or document, and both kinds answer `activeElement` about their own tree.
+export function activeWithin(node) {
+  const root = node && typeof node.getRootNode === "function" ? node.getRootNode() : null;
+  const active = root && root.activeElement;
+  return active && node.contains(active) ? active : null;
+}
+
 export function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
