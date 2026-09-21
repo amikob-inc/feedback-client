@@ -6,8 +6,8 @@
 // to the hub. Nothing here reimplements a capture step; a reimplementation would agree with itself
 // and prove nothing.
 //
-// Everything runs under vitest's jsdom environment. Two things about that environment are worked
-// around here and nowhere else:
+// Everything runs under vitest's jsdom environment. Three things about that environment are
+// worked around here and nowhere else:
 //
 //  - jsdom's Blob has no text()/arrayBuffer()/stream(), so the library's own real Blob usage
 //    produces parts a test cannot read. `installBlobPolyfill` adds the three through the one
@@ -16,6 +16,8 @@
 //  - jsdom parses <noscript> content as elements because it has scripting off, where a browser
 //    makes it one raw text node. The raw-text positions build the text node directly, which is
 //    the browser's shape (see tests/lib/markers.js).
+//  - jsdom implements neither canvas nor pseudo-element styles, which the screenshot run's clone
+//    pipeline asks for before it does anything else (`installScreenshotStubs`, below).
 import { gunzipSync } from "node:zlib";
 import {
   BLANK_CLASS,
@@ -241,7 +243,7 @@ export async function cloneOnlyScreenshotModule() {
   };
 }
 
-function installCanvasStub() {
+function installScreenshotStubs() {
   const proto = window.HTMLCanvasElement && window.HTMLCanvasElement.prototype;
   if (!proto || proto.toDataURL.fbhStub) return;
   // modern-screenshot asks the canvas whether webp is supported before it does anything else, and
@@ -249,6 +251,14 @@ function installCanvasStub() {
   const stub = () => "data:image/png;base64,iVBORw0KGgo=";
   stub.fbhStub = true;
   proto.toDataURL = stub;
+  // jsdom implements no pseudo-element styles and logs a line for every node modern-screenshot
+  // asks about, which buries the harness's own output. Dropping the argument returns the
+  // element's own computed style, which has no `content`, so modern-screenshot takes the same
+  // branch it takes today — quietly. (A real browser does copy `::before`/`::after` content into
+  // the picture; src/capture/screenshot.js drops the class those rules attach to for a blanked
+  // element, and jsdom cannot exercise that either way.)
+  const computed = window.getComputedStyle.bind(window);
+  window.getComputedStyle = (el) => computed(el);
 }
 
 // --------------------------------------------------------------------------------------------
@@ -261,7 +271,7 @@ export async function runCapture({
   interact = true,
 } = {}) {
   installBlobPolyfill();
-  if (settings.screenshot) installCanvasStub();
+  if (settings.screenshot) installScreenshotStubs();
   resetWarnings();
   resetDocument();
 

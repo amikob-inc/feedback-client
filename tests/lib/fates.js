@@ -16,14 +16,16 @@
 //     the implementation, and each is written down with the reason it holds. If a future rrweb
 //     starts serialising one of them, the position flips from absent to present and this harness
 //     goes red — which is the point of recording them rather than ignoring them.
-//  3. GAP — something that is published today and should not be, and that no option we pass can
-//     close. Each one is an entry here with a one-line reason and a pointer to the report. A gap
-//     asserts `published`, so the harness stays green while the gap is open and goes red the
-//     moment it closes (and someone then deletes the entry) or a *new* one appears.
+//  3. GAP — something that is published today, that someone might reasonably expect not to be,
+//     and that this library has decided not to close. Each one is an entry here with a one-line
+//     reason and a pointer to the report. A gap asserts `published`, so the harness stays green
+//     while the gap is open and goes red the moment it closes (and someone then deletes the
+//     entry) or a *new* one appears.
 //
-// What is NOT in this file: anything that could be closed by configuration. Those were closed —
-// see src/capture/replay.js and src/buffers/breadcrumbs.js — and their positions now assert
-// `withheld` like any other.
+// What is NOT in this file: anything this library can close. That used to mean "anything an rrweb
+// option reaches", which let three findings sit here as gaps although the emit callback could
+// have closed all three — `scrubReplayEvent` post-processes every event rrweb hands over, and is
+// as much a lever as an option is. The bar is now what the library can do, not what rrweb offers.
 import { BLANK_SELECTOR } from "./markers.js";
 
 // --------------------------------------------------------------------------------------------
