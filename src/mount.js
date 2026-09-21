@@ -9,13 +9,14 @@ import { gzip } from "./capture/gzip.js";
 import { idle, serializeReplay, startReplay } from "./capture/replay.js";
 import { captureScreenshot } from "./capture/screenshot.js";
 import { defaultSection, normalizeOptions } from "./options.js";
+import { createPanel } from "./panel/panel.js";
 import { attentionIds, markSeen, readSeen, safeStorage, seenKey, writeSeen } from "./seen.js";
 import { FeedbackError, createTransport } from "./transport.js";
 import { warnOnce } from "./warn.js";
 
-// Task 13 sets this to the built-in panel; until then a mount without its own `createPanel` is
-// headless and `open()` says so once.
-const defaultPanelFactory = null;
+// An app that wants its own UI passes `deps.createPanel` (spec §5.4, "Headless use"); everyone
+// else gets the built-in panel.
+const defaultPanelFactory = createPanel;
 
 // Standing rule 1: none of the app's own hooks (getToken is guarded inside transport.js instead,
 // since it is only ever called from there) may take the app down. Every call site below goes

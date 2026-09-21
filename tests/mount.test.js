@@ -408,3 +408,30 @@ describe("destroy", () => {
     }).not.toThrow();
   });
 });
+
+describe("open", () => {
+  it("shows the built-in panel and takes it away again on destroy", () => {
+    const { handle } = mount();
+    handle.open();
+    const host = document.getElementById("fbh-host");
+    expect(host).not.toBe(null);
+    expect(host.shadowRoot.querySelector(".fbh-overlay").hidden).toBe(false);
+    handle.close();
+    expect(host.shadowRoot.querySelector(".fbh-overlay").hidden).toBe(true);
+    handle.destroy();
+    expect(document.getElementById("fbh-host")).toBe(null);
+  });
+
+  it("opens from the app's own button", () => {
+    document.body.innerHTML = `<button id="topbar-issues"></button>`;
+    const { handle } = mount({ button: "#topbar-issues" });
+    expect(document.getElementById("topbar-issues").hidden).toBe(false);
+    document
+      .getElementById("topbar-issues")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(
+      document.getElementById("fbh-host").shadowRoot.querySelector(".fbh-overlay").hidden,
+    ).toBe(false);
+    handle.destroy();
+  });
+});
