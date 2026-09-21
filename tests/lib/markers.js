@@ -634,6 +634,82 @@ function placeOf(zone) {
   return "in ordinary page content";
 }
 
+// The automatic screenshot, which `capture.screenshot` leaves **on** by default and which the
+// first harness switched off in all six combinations, substituting a PNG it had built itself. It
+// is the highest-fidelity copy of the page the library sends, so it gets positions of its own and
+// a run of its own (tests/leak-matrix.test.js, "the automatic screenshot").
+//
+// Why a separate, curated set rather than the whole catalogue: jsdom cannot rasterise, so that run
+// scans the cloned, style-inlined SVG that modern-screenshot draws the picture from. The clone
+// carries things the picture never shows — every attribute, a `<title>` in the body, a hidden
+// field's value — so scanning the whole catalogue against it would assert fates that a raster
+// cannot break. A position belongs here only when a browser would really paint it.
+export function screenshotPositions() {
+  const paintedText = (ctx) => {
+    const el = ctx.doc.createElement("p");
+    el.textContent = `Cost ${ctx.marker}`;
+    ctx.parent.appendChild(el);
+  };
+  const typedValue = (type) => (ctx) => {
+    const el = ctx.doc.createElement("input");
+    el.setAttribute("type", type);
+    // The live value, which is what modern-screenshot copies onto the clone and what a browser
+    // paints into the field.
+    el.value = ctx.marker;
+    ctx.parent.appendChild(el);
+  };
+  return [
+    position({
+      id: "screenshot/text/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "text",
+      where: "text a browser paints, in ordinary page content",
+      plant: paintedText,
+    }),
+    position({
+      id: "screenshot/text/sensitive",
+      group: "screenshot",
+      zone: "sensitive",
+      kind: "text",
+      where: "text a browser paints, inside a blanked element",
+      plant: paintedText,
+    }),
+    position({
+      id: "screenshot/text/blanked",
+      group: "screenshot",
+      zone: "blanked",
+      kind: "text",
+      where: "text a browser paints, on the blanked element itself",
+      plant: paintedText,
+    }),
+    position({
+      id: "screenshot/field-value/sensitive",
+      group: "screenshot",
+      zone: "sensitive",
+      kind: "input-value",
+      where: "a field's typed value, inside a blanked element",
+      plant: typedValue("text"),
+    }),
+    position({
+      id: "screenshot/field-value/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "input-value",
+      where: "a field's typed value, in ordinary page content",
+      plant: typedValue("text"),
+    }),
+    position({
+      id: "screenshot/password/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "password",
+      where: "a password field's value, in ordinary page content",
+      plant: typedValue("password"),
+    }),
+  ];
+}
+
 export function buildPositions() {
   return [
     ...attributePositions(),

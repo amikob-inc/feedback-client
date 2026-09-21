@@ -218,6 +218,39 @@ function markedPng(marker) {
 }
 
 // --------------------------------------------------------------------------------------------
+// The automatic screenshot, captured for real.
+//
+// jsdom cannot rasterise — `HTMLCanvasElement.toDataURL` is not implemented — and a PNG's pixels
+// would not be searchable text even if it could. So a screenshot run stops one step short of the
+// raster and scans what modern-screenshot hands the rasteriser: the cloned, style-inlined SVG the
+// picture is drawn from. Everything up to that point is the real library doing the real work on
+// the real page, with the real `filter` and the real `onCloneEachNode` this library passes it —
+// which is the part `capture.blank` has to reach.
+//
+// Two options are added that the library does not pass: `font: false` and a stub `toDataURL`.
+// Neither touches what is in the clone; both keep jsdom from reaching for a network and a canvas
+// it does not have.
+export async function cloneOnlyScreenshotModule() {
+  const { domToForeignObjectSvg } = await import("modern-screenshot");
+  return {
+    domToBlob: async (node, options) => {
+      const svg = await domToForeignObjectSvg(node, { ...options, font: false });
+      return new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" });
+    },
+  };
+}
+
+function installCanvasStub() {
+  const proto = window.HTMLCanvasElement && window.HTMLCanvasElement.prototype;
+  if (!proto || proto.toDataURL.fbhStub) return;
+  // modern-screenshot asks the canvas whether webp is supported before it does anything else, and
+  // jsdom answers by logging "Not implemented" and returning null, which throws one line later.
+  const stub = () => "data:image/png;base64,iVBORw0KGgo=";
+  stub.fbhStub = true;
+  proto.toDataURL = stub;
+}
+
+// --------------------------------------------------------------------------------------------
 // The run
 
 export async function runCapture({
@@ -227,6 +260,7 @@ export async function runCapture({
   interact = true,
 } = {}) {
   installBlobPolyfill();
+  if (settings.screenshot) installCanvasStub();
   resetWarnings();
   resetDocument();
 
@@ -294,6 +328,7 @@ export async function runCapture({
         pending.push(fn());
       },
       loadRecorder: () => import("@rrweb/record"),
+      loadScreenshot: settings.screenshot ? cloneOnlyScreenshotModule : undefined,
     },
   );
   await Promise.all(pending);
@@ -302,13 +337,18 @@ export async function runCapture({
   if (interact && channels) await runInteractions(channels);
   await settle();
 
-  await handle.submit({
+  const fields = {
     text: `The price column is wrong. ${reporterText}`,
     section: sectionName,
     type: "Bug",
     images: imageMarker ? [markedPng(imageMarker)] : [],
-    screenshot: screenshotMarker ? markedPng(screenshotMarker) : null,
-  });
+  };
+  // Only when the run owns a `screenshot-bytes` marker does the harness hand submit() a PNG of
+  // its own. Left out, `fields.screenshot` is undefined and mount takes the screenshot itself —
+  // which is the path `capture.screenshot: true` uses in a real app, and the one no combination
+  // exercised before (audit finding F4).
+  if (screenshotMarker) fields.screenshot = markedPng(screenshotMarker);
+  await handle.submit(fields);
   handle.destroy();
 
   const form = forms[0];

@@ -90,7 +90,13 @@ const MECHANISMS = [
 // and a field's raw `value=` when the live value is empty). Their positions assert `withheld` like
 // any other, which is what a closed gap looks like here.
 
-const GAPS = [];
+const GAPS = [
+  {
+    id: "screenshot-shows-what-is-on-screen",
+    match: (p) => p.id === "screenshot/field-value/ordinary",
+    why: "the automatic screenshot is a picture of what the reporter is looking at, and a field's typed value is on screen. maskAllInputs governs the recording; an app that needs a value kept out of the picture names it in capture.blank, which the screenshot now honours (report, finding F4)",
+  },
+];
 
 // --------------------------------------------------------------------------------------------
 
@@ -112,9 +118,10 @@ export function expectedFate(position, settings) {
   }
   if (zone === "channel") return channelFate(position, settings, blanking);
 
-  // Everything below is page content, and the recording is the only part that carries any.
-  if (!settings.replay) {
-    return fate("withheld", "the recording is off, and it is the only part that carries the page");
+  // Everything below is page content, and only two parts carry any: the recording and the
+  // automatic screenshot. With both off, nothing from the page can reach the bundle at all.
+  if (!settings.replay && !settings.screenshot) {
+    return fate("withheld", "no recording and no screenshot: no part carries the page");
   }
   // A gap is a statement about what the code really does, so it beats the policy rules below —
   // except for a password, which no gap may ever be allowed to excuse.

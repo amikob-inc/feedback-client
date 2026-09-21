@@ -13,7 +13,7 @@
 // for a person to read.
 import { writeFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { BLANK_SELECTOR, buildPositions } from "./lib/markers.js";
+import { BLANK_SELECTOR, buildPositions, screenshotPositions } from "./lib/markers.js";
 import { DEFAULT_SETTINGS, formatScan, runCapture, scan } from "./lib/capture-harness.js";
 
 const positions = buildPositions();
@@ -40,6 +40,9 @@ const COMBINATIONS = {
 };
 
 const runs = {};
+// Runs with a position list of their own, kept out of `runs` so the rules below — which hold for
+// every combination of the full catalogue — are not asked about a page that never had one.
+const extraRuns = {};
 
 beforeAll(async () => {
   for (const [name, settings] of Object.entries(COMBINATIONS)) {
@@ -49,7 +52,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   if (!process.env.FBH_LEAK_REPORT) return;
-  const text = Object.entries(runs)
+  const text = Object.entries({ ...runs, ...extraRuns })
     .map(([name, run]) => formatScan(run, { title: name, verbose: true }))
     .join("\n\n==============================================================\n\n");
   writeFileSync("leak-report.txt", `${text}\n`);
@@ -167,6 +170,60 @@ describe("what maskAllInputs is worth", () => {
       );
     expect(values(runs.hardened)).toEqual([]);
     expect(values(runs["blank-without-mask"]).length).toBeGreaterThan(5);
+  });
+});
+
+// The automatic screenshot: on by default, and until now switched off in every combination with a
+// hand-made PNG substituted for it, so the one part that is a picture of the whole page had no
+// position at all. This run captures for real — the real modern-screenshot, the real filter and
+// clone hook this library passes it — and stops one step short of the raster, because jsdom
+// cannot rasterise and a raster is not searchable text (see tests/lib/capture-harness.js).
+describe("the automatic screenshot", () => {
+  const settings = { ...DEFAULT_SETTINGS, screenshot: true };
+  let captured;
+  let run;
+
+  beforeAll(async () => {
+    captured = await runCapture({ settings, positions: screenshotPositions(), interact: false });
+    run = scan(captured);
+    extraRuns.screenshot = run;
+  }, 120000);
+
+  it("really took one, and it is what the harness is reading", () => {
+    const part = run.parts.find((one) => one.name === "screenshot");
+    expect(part, "no screenshot part: the capture path did not take one").toBeTruthy();
+    expect(part.bytes).toBeGreaterThan(200);
+    // Not the harness's own PNG: this run hands submit() no screenshot at all, so the part can
+    // only be the one mount.js went and took.
+    expect(captured.report.capture.screenshot).toBe(true);
+  });
+
+  it("shows what is on the page", () => {
+    const shown = run.results.find((one) => one.position.id === "screenshot/text/ordinary");
+    expect(shown.hits.map((hit) => hit.part)).toContain("screenshot");
+  });
+
+  it("shows nothing the app named in capture.blank", () => {
+    expect(
+      run.leaked.map((one) => one.position.id),
+      `\n${formatScan(run, { title: "screenshot" })}`,
+    ).toEqual([]);
+    for (const id of [
+      "screenshot/text/sensitive",
+      "screenshot/text/blanked",
+      "screenshot/field-value/sensitive",
+    ]) {
+      const one = run.results.find((position) => position.position.id === id);
+      expect(one.fate.expect, id).toBe("withheld");
+      expect(one.hits, id).toEqual([]);
+    }
+  });
+
+  it("still sends everything a report needs", () => {
+    expect(
+      run.missing.map((one) => one.position.id),
+      `\n${formatScan(run, { title: "screenshot" })}`,
+    ).toEqual([]);
   });
 });
 

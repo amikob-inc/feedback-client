@@ -175,7 +175,14 @@ export function mountFeedback(rawOptions, deps = {}) {
   }
 
   function captureNow() {
-    return captureScreenshot({ load: deps.loadScreenshot, target: doc.body });
+    // The same `capture.blank` the recorder blocks on and the breadcrumb describers withhold: a
+    // picture of the page is a copy of the page, and it was the only one of the three not
+    // honouring it (audit finding F4).
+    return captureScreenshot({
+      load: deps.loadScreenshot,
+      target: doc.body,
+      blank: options.capture.blank,
+    });
   }
 
   async function replayPart() {
