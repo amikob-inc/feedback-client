@@ -32,6 +32,11 @@ const COMBINATIONS = {
   "replay-off": { ...DEFAULT_SETTINGS, replay: false },
   // The two buffers an app can switch off (spec §5.5).
   "buffers-off": { ...DEFAULT_SETTINGS, console: false, network: false },
+  // One typo in one dashboard's `capture.blank`, beside the selectors it got right. A selector
+  // list is passed to an engine as one string, and an engine that cannot parse the string answers
+  // "nothing matches" for every element — so this combination is the difference between a typo
+  // that costs one selector and a typo that costs all of them.
+  "typo-in-blank": { ...DEFAULT_SETTINGS, blank: [BLANK_SELECTOR, "div:has-bad((("] },
 };
 
 const runs = {};

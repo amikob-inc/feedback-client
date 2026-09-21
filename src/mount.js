@@ -115,7 +115,7 @@ export function mountFeedback(rawOptions, deps = {}) {
     });
   const buffers = installBuffers({ win, doc, capture: options.capture });
   const replay = options.capture.replay
-    ? startReplay(options.capture, { load: deps.loadRecorder, schedule: deps.schedule })
+    ? startReplay(options.capture, { load: deps.loadRecorder, schedule: deps.schedule, doc })
     : null;
   // What the panel's "what will be sent" note gets to ask, so it can say what will really happen
   // instead of assuming the static `capture.replay` flag came true. The flag only says the app

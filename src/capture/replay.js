@@ -6,6 +6,7 @@
 // previous one goes first (spec §5.2), and if the current one alone is still too big there is no
 // replay part at all.
 import { byteLength } from "../bytes.js";
+import { blankSelector } from "../selectors.js";
 import { warnOnce } from "../warn.js";
 
 export const REPLAY_JSON_MAX = 8 * 1024 * 1024;
@@ -148,7 +149,11 @@ export function scrubReplayEvent(event) {
   return { ...event, data: { ...data, href: stripQuery(data.href) } };
 }
 
-export function rrwebOptions({ maskAllInputs = false, blank = [] } = {}, emit) {
+export function rrwebOptions(
+  { maskAllInputs = false, blank = [] } = {},
+  emit,
+  doc = globalThis.document,
+) {
   const options = {
     emit,
     checkoutEveryNms: CHECKOUT_MS,
@@ -162,7 +167,12 @@ export function rrwebOptions({ maskAllInputs = false, blank = [] } = {}, emit) {
     recordCanvas: false,
   };
   if (maskAllInputs) options.maskTextSelector = EDITABLE_SELECTOR;
-  if (blank && blank.length) options.blockSelector = blank.join(",");
+  // Not `blank.join(",")`: rrweb takes one string, and one selector in it that the engine cannot
+  // parse makes the whole string unusable — which rrweb answers by blocking nothing at all, in
+  // silence (see src/selectors.js). The unusable entries are dropped and named here instead, so
+  // an app that ships one typo keeps the protection of every selector it got right.
+  const selector = blankSelector(blank, doc);
+  if (selector) options.blockSelector = selector;
   return options;
 }
 
@@ -173,7 +183,7 @@ export function idle(fn) {
 
 export function startReplay(
   capture,
-  { load = () => import("@rrweb/record"), schedule = idle } = {},
+  { load = () => import("@rrweb/record"), schedule = idle, doc = globalThis.document } = {},
 ) {
   const segments = createSegments();
   let stopFn = null;
@@ -190,8 +200,10 @@ export function startReplay(
           return;
         }
         stopFn = record(
-          rrwebOptions(capture, (event, isCheckout) =>
-            segments.push(scrubReplayEvent(event), !!isCheckout),
+          rrwebOptions(
+            capture,
+            (event, isCheckout) => segments.push(scrubReplayEvent(event), !!isCheckout),
+            doc,
           ),
         );
         // @rrweb/record@2.1.6's own record() wraps its whole body in a try/catch that logs to

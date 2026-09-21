@@ -162,6 +162,48 @@ describe("rrwebOptions", () => {
     expect(rrwebOptions(undefined, () => {})).not.toHaveProperty("blockSelector");
   });
 
+  // rrweb takes blockSelector as one comma-joined string and swallows the SyntaxError a bad one
+  // raises, answering "not blocked" for every element on the page. So one typo in one dashboard's
+  // `capture.blank` turned blocking off for the whole recording, silently. The list is checked
+  // against the selector engine before it is joined; here that engine is a stand-in, because this
+  // file runs without a DOM. The real engine does the same job end to end in the leak matrix's
+  // `typo-in-blank` combination (tests/leak-matrix.test.js).
+  describe("an unparseable selector in capture.blank", () => {
+    const engine = {
+      querySelector(selector) {
+        if (selector.includes("((")) throw new SyntaxError(`bad selector: ${selector}`);
+        return null;
+      },
+    };
+
+    it("is dropped, and the selectors around it keep working", () => {
+      resetWarnings();
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const options = rrwebOptions(
+        { blank: [".sku-price", "div:has-bad(((", ".email"] },
+        () => {},
+        engine,
+      );
+      expect(options.blockSelector).toBe(".sku-price,.email");
+    });
+
+    it("is named in one warning rather than failing open in silence", () => {
+      resetWarnings();
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      rrwebOptions({ blank: [".sku-price", "div:has-bad((("] }, () => {}, engine);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain("div:has-bad(((");
+    });
+
+    it("leaves no blockSelector at all when nothing in the list parses", () => {
+      resetWarnings();
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect(rrwebOptions({ blank: ["div:has-bad((("] }, () => {}, engine)).not.toHaveProperty(
+        "blockSelector",
+      );
+    });
+  });
+
   // rrweb's own `maskAllInputs: true` expands to a fixed list of input kinds *and discards any
   // maskInputOptions passed with it*, so the flag and a correction cannot be combined. The list
   // it expands to leaves out `hidden` and `file`. The marker harness caught both

@@ -12,6 +12,7 @@
 // of a button inside a blanked region and watched it come out in the report's breadcrumb trail
 // (tests/leak-matrix.test.js, channel/click-text).
 import { Ring, cut } from "./ring.js";
+import { blankSelector } from "../selectors.js";
 import { warnOnce } from "../warn.js";
 
 export const BREADCRUMBS_KEEP = 100;
@@ -95,22 +96,15 @@ export function hiddenTarget(el) {
   return el && el.tagName ? `${el.tagName.toLowerCase()} (hidden)` : "(hidden)";
 }
 
-// One selector list, built once, with the unusable entries dropped rather than the whole list:
-// an app that ships one typo in `capture.blank` must not lose the protection of the other
-// selectors it got right. `doc.querySelector` is the cheapest way to ask the engine whether a
-// selector parses, and it runs once per selector at install rather than once per click.
-export function usableSelector(doc, blank) {
-  const ok = [];
-  for (const one of blank || []) {
-    if (typeof one !== "string" || !one.trim()) continue;
-    try {
-      doc.querySelector(one);
-      ok.push(one);
-    } catch {
-      // Not a selector this engine can parse. Skipped, and the rest of the list still applies.
-    }
+// `closest` walks up from the element itself, so this covers both the blanked element and
+// everything inside it — the same reach `blockSelector` has in the recording.
+export function isBlankedElement(el, selector) {
+  if (!selector || !el || typeof el.closest !== "function") return false;
+  try {
+    return !!el.closest(selector);
+  } catch {
+    return false;
   }
-  return ok.join(",");
 }
 
 export function installBreadcrumbBuffer({
@@ -120,17 +114,10 @@ export function installBreadcrumbBuffer({
   maskAllInputs = false,
   blank = [],
 } = {}) {
-  const blankSelector = usableSelector(doc, blank);
-  // `closest` walks up from the element itself, so this covers both the blanked element and
-  // everything inside it — the same reach `blockSelector` has in the recording.
-  const isBlanked = (el) => {
-    if (!blankSelector || !el || typeof el.closest !== "function") return false;
-    try {
-      return !!el.closest(blankSelector);
-    } catch {
-      return false;
-    }
-  };
+  // Unusable entries dropped rather than the whole list, and named once: the same check the
+  // recorder's blockSelector now gets (src/selectors.js).
+  const selector = blankSelector(blank, doc);
+  const isBlanked = (el) => isBlankedElement(el, selector);
   const ring = new Ring(BREADCRUMBS_KEEP);
   // Every breadcrumb, whatever kind, is recorded through this one function, and everything that
   // can fail — reading `now()`, describing the target/field/route, pushing onto the ring — is

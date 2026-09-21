@@ -8,7 +8,7 @@ import {
   fieldLabel,
   hiddenTarget,
   installBreadcrumbBuffer,
-  usableSelector,
+  isBlankedElement,
 } from "../src/buffers/breadcrumbs.js";
 import { resetWarnings } from "../src/warn.js";
 
@@ -388,11 +388,18 @@ describe("installBreadcrumbBuffer with capture.blank", () => {
   });
 });
 
-describe("usableSelector", () => {
-  it("drops what the engine cannot parse and keeps the rest", () => {
-    expect(usableSelector(document, [".a", "!!!", "#b", "", null, 7])).toBe(".a,#b");
-    expect(usableSelector(document, [])).toBe("");
-    expect(usableSelector(document, undefined)).toBe("");
+describe("isBlankedElement", () => {
+  it("is true for the element itself and for anything inside it", () => {
+    document.body.innerHTML = '<div class="b"><span><em id="deep">x</em></span></div><p id="out"/>';
+    expect(isBlankedElement(document.querySelector(".b"), ".b")).toBe(true);
+    expect(isBlankedElement(document.getElementById("deep"), ".b")).toBe(true);
+    expect(isBlankedElement(document.getElementById("out"), ".b")).toBe(false);
+  });
+
+  it("is false with no selector, no element, or a selector the engine rejects", () => {
+    expect(isBlankedElement(document.body, "")).toBe(false);
+    expect(isBlankedElement(null, ".b")).toBe(false);
+    expect(isBlankedElement(document.body, "!!!")).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resetWarnings, warnOnce } from "../src/warn.js";
+import { noticeOnce, resetWarnings, warnOnce } from "../src/warn.js";
 
 describe("warnOnce", () => {
   it("warns once per label, whatever happens after", () => {
@@ -18,6 +18,17 @@ describe("warnOnce", () => {
     const warn = vi.fn();
     warnOnce("replay", "no recorder", warn);
     expect(warn.mock.calls[0][0]).toBe("[feedback-client] replay disabled: no recorder");
+  });
+
+  it("shares its once-per-label budget with noticeOnce", () => {
+    // Both spellings write about the same subsystem, so a notice must not be repeated as a
+    // warning (or the other way round) just because it took the other door.
+    resetWarnings();
+    const warn = vi.fn();
+    noticeOnce("capture.blank", "one selector ignored", warn);
+    warnOnce("capture.blank", new Error("boom"), warn);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toBe("[feedback-client] capture.blank: one selector ignored");
   });
 
   it("swallows a console that throws", () => {
