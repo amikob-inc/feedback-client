@@ -71,12 +71,29 @@ describe("createPanel", () => {
   });
 
   it("starts and stops the list polling with the panel", () => {
-    const { panel, api } = setup();
-    panel.open();
-    expect(api.list).toHaveBeenCalledTimes(1);
-    panel.close();
-    expect(panel.isOpen()).toBe(false);
-    panel.destroy();
+    vi.useFakeTimers();
+    try {
+      const { panel, api } = setup();
+      panel.open();
+      expect(api.list).toHaveBeenCalledTimes(1);
+
+      // The poll is the point of the assertion: a closed panel must not keep asking the hub every
+      // thirty seconds. Advancing the clock past two intervals with the panel shut is what proves
+      // close() really stopped it — counting calls at the moment of closing proves nothing, since
+      // the next tick had not arrived yet either way.
+      // Three more ticks at the list's thirty-second interval, on top of the one open() made.
+      vi.advanceTimersByTime(90_000);
+      expect(api.list).toHaveBeenCalledTimes(4);
+
+      panel.close();
+      expect(panel.isOpen()).toBe(false);
+      const afterClose = api.list.mock.calls.length;
+      vi.advanceTimersByTime(90_000);
+      expect(api.list).toHaveBeenCalledTimes(afterClose);
+      panel.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("closes on Escape, on the close button and on the backdrop, and gives focus back", () => {
@@ -132,7 +149,7 @@ describe("createPanel", () => {
     panel.destroy();
   });
 
-  // theme() is an app hook (spec §5.4, standing rule 4: "the library may never break the host
+  // theme() is an app hook (spec §5.4), and the library may never break the host
   // application"): a throw, or a value that is not literally "dark", must fall back to light
   // rather than take the panel down. A naive `options.theme() === "dark"` with no guard fails
   // this the instant theme() throws.
@@ -293,7 +310,7 @@ describe("createPanel", () => {
     panel.destroy();
   });
 
-  // Isolation, in both directions (task brief item 1). jsdom's own CSS engine does not implement
+  // Isolation, in both directions. jsdom's own CSS engine does not implement
   // Shadow DOM style scoping faithfully (confirmed by hand: a light-DOM `button { color: ... }`
   // rule bleeds into shadow content under getComputedStyle here, which real Chromium/Firefox/
   // WebKit never do), so a computed-style assertion here would be testing jsdom's gaps, not this
@@ -345,5 +362,19 @@ describe("createPanel", () => {
       expect(afterOpen).toEqual(before);
       panel.destroy();
     });
+  });
+});
+
+describe("the host element", () => {
+  // The panel defends itself against a page-wide reset with `display: block !important`, and a
+  // shadow tree's !important beats the outer page's — so without an escape hatch a dashboard
+  // could not hide its own host element on purpose. `hidden` is that hatch.
+  it("declares a hidden host as display: none", () => {
+    const { panel } = setup();
+    panel.open();
+    const css = document.getElementById("fbh-host").shadowRoot.querySelector("style").textContent;
+    const hiddenRule = css.slice(css.indexOf(":host([hidden])"));
+    expect(hiddenRule).toMatch(/display:\s*none\s*!important/);
+    panel.destroy();
   });
 });

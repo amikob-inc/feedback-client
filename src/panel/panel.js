@@ -14,7 +14,7 @@ export const FOCUSABLE =
 
 // The same "an app hook may never take the panel down" rule every other module in this library
 // already applies to the host's own callbacks (form.js's and list.js's own `safeCall` twins):
-// `theme()` runs on every open(), and a throw or a nonsense return (spec §5.4, standing rule 4)
+// `theme()` runs on every open(), and a throw or a nonsense return
 // must fall back to light, not crash the panel.
 function safeCall(fn, fallback, label) {
   try {
@@ -84,7 +84,7 @@ export function createPanel({ api, options, doc }) {
   let open_ = false;
   let lastFocus = null;
   // The exact inline value document.documentElement.style.overflow held before open() touched it
-  // — not merely "", since an app may already have set one (spec §5.4, standing rule 4: "closing
+  // — not merely "", since an app may already have set one (spec §5.4: closing
   // must restore whatever the page had"). null means "open() has not locked scrolling", the guard
   // close() itself uses so a second close() (or a close() with no matching open()) is a no-op.
   let previousOverflow = null;
@@ -129,7 +129,7 @@ export function createPanel({ api, options, doc }) {
   }
 
   // Moves focus into the dialog on open(). The dialog can, briefly or in a degenerate
-  // configuration, hold nothing focusable at all (spec §5.4, standing rule 2) — the panel box
+  // configuration, hold nothing focusable at all — the panel box
   // itself, focusable only via its tabindex="-1", is where focus goes instead, so a keyboard
   // reporter always lands inside the dialog and never on whatever they clicked to open it.
   function focusInto() {

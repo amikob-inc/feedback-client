@@ -47,6 +47,14 @@ export const PANEL_CSS = `
      "hidden" and "there": nothing else here needs, or gets, the same treatment. */
   display: block !important;
 }
+/* ...which, because a shadow tree's !important beats the outer page's !important too, would
+   otherwise leave a dashboard no way to hide its own host element even deliberately — a one-way
+   lock we did not intend. The hidden attribute is the way back: it is the platform's own "not
+   relevant right now", an app sets it deliberately, and no page-wide reset sets it by accident.
+   (Written without backticks on purpose: this CSS lives in a template literal.) */
+:host([hidden]) {
+  display: none !important;
+}
 :host([data-theme="dark"]) {
   --fbh-bg: #17171b;
   --fbh-panel: #1f1f25;
