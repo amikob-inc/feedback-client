@@ -222,21 +222,31 @@ describe("submit", () => {
     handle.destroy();
   });
 
-  // Nothing in submit() reads the live document any more beyond `pageContext` (path, title,
-  // viewport), so a page that is hostile to being cloned — the shape that used to cost the whole
-  // snapshot — is simply not this library's problem: the report still goes.
-  it("submits from a page that refuses to be cloned", async () => {
+  // The library sends no copy of the reporter's page at all (removed 2026-09-21, see the plan's
+  // note): this pins that, so a future change cannot quietly start attaching one again.
+  it("sends no copy of the page", async () => {
     const { handle, transport } = mount();
-    const original = document.documentElement.cloneNode;
-    document.documentElement.cloneNode = () => {
-      throw new Error("hostile clone");
-    };
-    try {
-      await expect(handle.submit({ text: "boom" })).resolves.toMatchObject({ id: "report-1" });
-    } finally {
-      document.documentElement.cloneNode = original;
-    }
-    expect(transport.submit.mock.calls[0][0].get("dom")).toBe(null);
+    await expect(handle.submit({ text: "no page copy" })).resolves.toMatchObject({
+      id: "report-1",
+    });
+    const sent = transport.submit.mock.calls[0][0];
+    expect(sent.get("dom")).toBe(null);
+    expect([...sent.keys()].some((k) => /dom|html|snapshot/i.test(k))).toBe(false);
+    handle.destroy();
+  });
+
+  // A hook may return something that is not a string. Catching a throw is not enough: an object
+  // that serialises badly would reach JSON.stringify inside the bundle builder and break the
+  // caller's submit() rather than the library's own error contract.
+  it("survives a section() that returns an unserialisable object", async () => {
+    const circular = { name: "browse" };
+    circular.self = circular;
+    const { handle, transport } = mount({ section: () => circular });
+    await expect(handle.submit({ text: "circular section" })).resolves.toMatchObject({
+      id: "report-1",
+    });
+    const report = JSON.parse(await transport.submit.mock.calls[0][0].get("report").text());
+    expect(typeof report.page.view).toBe("string");
     handle.destroy();
   });
 });

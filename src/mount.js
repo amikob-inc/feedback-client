@@ -30,6 +30,22 @@ function safeCall(fn, fallback, label = "callback") {
   }
 }
 
+// A host hook can return anything at all, and what it returns ends up inside the report JSON.
+// Catching a throw is only half the guard: a hook that succeeds and hands back an object — a
+// circular one, say, or one whose toString throws — would otherwise reach JSON.stringify in the
+// bundle builder and take submit() down with a raw TypeError, which is exactly the "the library
+// may never break the host application" rule, one hook short. Everything a hook returns becomes
+// a string here, or nothing.
+function asText(value, label) {
+  if (value === null || value === undefined) return "";
+  try {
+    return String(value);
+  } catch (err) {
+    warnOnce(`${label} value`, err);
+    return "";
+  }
+}
+
 export function resolveButton(button, doc) {
   if (!button) return null;
   if (typeof button === "string") return doc.querySelector(button);
@@ -42,8 +58,8 @@ export function pageContext({ doc, win, options }) {
     // pathname + hash only, deliberately: a query string can carry a token (cad-dashboard's own
     // router puts one in a magic-link redirect), and nothing here may capture that.
     path: `${win.location.pathname}${win.location.hash}`,
-    view: safeCall(options.section, "", "section()") || "",
-    title: doc.title || "",
+    view: asText(safeCall(options.section, "", "section()"), "section()"),
+    title: asText(doc.title, "document.title"),
     viewport: [win.innerWidth || 0, win.innerHeight || 0],
     dpr: win.devicePixelRatio || 1,
     theme: safeCall(options.theme, "light", "theme()") === "dark" ? "dark" : "light",
