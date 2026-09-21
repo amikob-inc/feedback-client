@@ -10,10 +10,14 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.js",
+    ".": {
+      "types": "./types/index.d.ts",
+      "default": "./src/index.js"
+    },
     "./fixtures/status-cases.json": "./fixtures/status-cases.json",
     "./package.json": "./package.json"
   },
+  "types": "./types/index.d.ts",
   "engines": {
     "node": ">=20"
   },
@@ -24,7 +28,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:e2e": "playwright test",
-    "test:leaks": "FBH_LEAK_REPORT=1 vitest run tests/leak-matrix.test.js tests/leak-harness-selftest.test.js"
+    "test:leaks": "FBH_LEAK_REPORT=1 vitest run tests/leak-matrix.test.js tests/leak-harness-selftest.test.js",
+    "size": "node tools/size.mjs",
+    "build:demo": "node tools/build-demo.mjs",
+    "demo": "node tools/build-demo.mjs && node tests/stub-hub.mjs"
   },
   "dependencies": {
     "@rrweb/record": "^2.1.4",
@@ -33,6 +40,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.10.0",
     "globals": "^17.12.0",
     "jsdom": "^27.0.0",

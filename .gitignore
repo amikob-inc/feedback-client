@@ -1,5 +1,6 @@
 node_modules/
 playwright-report/
 test-results/
+demo/dist/
 *.log
 leak-report.txt

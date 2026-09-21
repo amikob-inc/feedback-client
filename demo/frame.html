@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>demo child frame</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 8px;
+        font:
+          12px/1.4 system-ui,
+          sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <p id="frame-text"></p>
+    <label>Child password <input id="frame-password" type="password" /></label>
+    <div class="secret"><p id="frame-blanked"></p></div>
+    <script type="module">
+      // A same-origin child document, which the recorder walks into on its own once it loads.
+      // Nothing in the library's jsdom tests could reach this path, so the markers here are the
+      // only way to find out what the recorder does with a second document's fields.
+      import { MARKERS } from "./markers.js";
+      document.getElementById("frame-text").textContent =
+        `Ordinary text in the child frame: ${MARKERS.IFRAME_PUBLIC}`;
+      document.getElementById("frame-password").value = MARKERS.IFRAME_PASSWORD;
+      document.getElementById("frame-blanked").textContent =
+        `Cost price in the child frame: ${MARKERS.IFRAME_BLANKED}`;
+    </script>
+  </body>
+</html>

@@ -1,8 +1,7 @@
 name: CI
 
-# Lint, format and the unit tests on every pull request and push; Task 14 adds the `e2e` job that
-# drives the demo page against the stub hub. A tag push runs the same checks, so a release tag is
-# never green by accident.
+# Lint, format and the unit tests on every pull request and push, and the browser run beside them.
+# A tag push runs the same checks, so a release tag is never green by accident.
 on:
   pull_request:
   push:
@@ -31,3 +30,26 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test
+
+  # The half of this library that jsdom cannot test: Shadow DOM style isolation, the annotator's
+  # canvas, the real recorder and the real screenshot. It runs beside `checks` rather than after
+  # it, because a failure here is usually about the browser and a failure there usually is not.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
