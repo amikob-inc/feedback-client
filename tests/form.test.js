@@ -18,6 +18,10 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen } = 
   const api = {
     submit: vi.fn(async () => ({ id: "r1", dropped: [] })),
     captureScreenshot: vi.fn(async () => png()),
+    // Resolved true by default: most of these tests assume a recorder that is up and running,
+    // matching the pre-F4 behaviour. The dedicated "What will be sent" tests below override this
+    // to exercise the pending/failed recorder cases.
+    replayReady: Promise.resolve(true),
     options,
     ...apiOverrides,
   };
@@ -124,6 +128,28 @@ describe("createForm", () => {
     form.destroy();
   });
 
+  it("never drops focus to <body> when Retry is activated", async () => {
+    const api = {
+      submit: vi.fn(async () => {
+        throw Object.assign(new Error("Your session expired; sign in again."), { status: 401 });
+      }),
+    };
+    const { form } = setup({ api });
+    await form.prepare();
+    $("#fbh-text").value = "still here";
+    $("#fbh-submit").click();
+    await vi.waitFor(() => expect($("#fbh-retry")).not.toBe(null));
+    $("#fbh-retry").focus();
+    expect(document.activeElement).toBe($("#fbh-retry"));
+    $("#fbh-retry").click();
+    // Synchronously, before the retried submit() even resolves: hideRetry() removes the button
+    // as the very first step of send(), and that is the moment focus can fall to <body>.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe($(".fbh-message"));
+    await vi.waitFor(() => expect(api.submit).toHaveBeenCalledTimes(2));
+    form.destroy();
+  });
+
   it("clears a stale Retry button when the reporter submits again with an empty description", async () => {
     const api = {
       submit: vi.fn(async () => {
@@ -225,6 +251,52 @@ describe("createForm", () => {
     delete window.navigator.mediaDevices;
   });
 
+  it("says something when the screen-capture picker is denied or dismissed, instead of doing nothing observable", async () => {
+    document.body.innerHTML = "";
+    const captureScreen = vi.fn(async () => null);
+    const { form } = setup({ captureScreen, options: {} });
+    form.element.ownerDocument.defaultView.navigator.mediaDevices = { getDisplayMedia() {} };
+    await form.prepare();
+    expect($("#fbh-capture")).not.toBe(null);
+    $("#fbh-capture").click();
+    await vi.waitFor(() => expect(captureScreen).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect($(".fbh-message").textContent).toBe("Screen capture wasn't added."),
+    );
+    expect($(".fbh-strip").textContent).not.toContain("Image 1");
+    form.destroy();
+    delete window.navigator.mediaDevices;
+  });
+
+  it("moves focus to the attachment that slides into the removed one's place", async () => {
+    const { form } = setup();
+    await form.prepare(); // strip: [Screenshot]
+    form.addImage(png(), "a.png"); // strip: [Screenshot, Image 1]
+    form.addImage(png(), "b.png"); // strip: [Screenshot, Image 1, Image 2]
+    const removeButtons = () => [...document.querySelectorAll(".fbh-strip [data-remove]")];
+    expect(removeButtons()).toHaveLength(3);
+    removeButtons()[0].focus();
+    removeButtons()[0].click(); // removes the screenshot, the first slot
+    const after = removeButtons();
+    expect(after).toHaveLength(2);
+    expect(document.activeElement).toBe(after[0]);
+    expect(document.activeElement.getAttribute("aria-label")).toBe("Remove Image 1");
+    form.destroy();
+  });
+
+  it("moves focus to Attach image when the last attachment is removed", async () => {
+    const api = { captureScreenshot: vi.fn(async () => null) };
+    const { form } = setup({ api });
+    await form.prepare(); // no screenshot: api.captureScreenshot resolves null
+    form.addImage(png(), "a.png"); // strip: [Image 1], the only attachment
+    const removeButton = $(".fbh-strip [data-remove]");
+    removeButton.focus();
+    removeButton.click();
+    expect($(".fbh-strip").querySelectorAll("[data-remove]")).toHaveLength(0);
+    expect(document.activeElement).toBe($("#fbh-attach"));
+    form.destroy();
+  });
+
   it("stops listening for pastes once released", async () => {
     const { form } = setup();
     await form.prepare();
@@ -236,10 +308,10 @@ describe("createForm", () => {
     form.destroy();
   });
 
-  // Standing rule 3 (task-10-brief): the app's own section() hook can throw for reasons outside
-  // this module's control (mount.js guards it the same way for exactly this reason). prepare()
-  // must still resolve and leave the dropdown on a sane default, not reject with an uncaught
-  // error that a caller (the panel shell) has no reason to expect and might not catch.
+  // The app's own section() hook can throw for reasons outside this module's control (mount.js
+  // guards it the same way for exactly this reason). prepare() must still resolve and leave the
+  // dropdown on a sane default, not reject with an uncaught error that a caller (the panel shell)
+  // has no reason to expect and might not catch.
   it("survives a throwing section() while preparing, and falls back to the last section", async () => {
     const { form } = setup({
       options: {
@@ -250,6 +322,61 @@ describe("createForm", () => {
     });
     await expect(form.prepare()).resolves.toBeUndefined();
     expect($("#fbh-section").value).toBe("General");
+    form.destroy();
+  });
+});
+
+describe("the recording clause in 'What will be sent'", () => {
+  it("leaves the recording out while the recorder's real status is still unknown", async () => {
+    let resolveReady;
+    const replayReady = new Promise((resolve) => {
+      resolveReady = resolve;
+    });
+    const { form } = setup({ api: { replayReady } });
+    await form.prepare();
+    expect($(".fbh-note").textContent).not.toContain("a recording");
+    resolveReady(true);
+    await vi.waitFor(() =>
+      expect($(".fbh-note").textContent).toContain("a recording of the last minute or two"),
+    );
+    form.destroy();
+  });
+
+  it("never claims a recording once the recorder is confirmed to have failed to start", async () => {
+    const { form } = setup({ api: { replayReady: Promise.resolve(false) } });
+    await form.prepare();
+    // Give the already-settled promise's .then() a turn to run and re-render the note.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect($(".fbh-note").textContent).not.toContain("a recording");
+    form.destroy();
+  });
+
+  it("mentions the recording once it is confirmed, even if that happens after the strip last rendered", async () => {
+    let resolveReady;
+    const replayReady = new Promise((resolve) => {
+      resolveReady = resolve;
+    });
+    const { form } = setup({ api: { replayReady } });
+    await form.prepare();
+    // Nothing else touches the strip or the checkbox between prepare() and the recorder settling
+    // — the note still has to catch up on its own.
+    resolveReady(true);
+    await vi.waitFor(() =>
+      expect($(".fbh-note").textContent).toBe(
+        "What will be sent: a screenshot of this page, a recording of the last minute or two, the console and network log.",
+      ),
+    );
+    form.destroy();
+  });
+
+  it("still says nothing about a recording the reporter opted out of, even once the recorder is confirmed", async () => {
+    const { form } = setup({ api: { replayReady: Promise.resolve(true) } });
+    await form.prepare();
+    $("#fbh-no-replay").checked = true;
+    $("#fbh-no-replay").dispatchEvent(new window.Event("change"));
+    await Promise.resolve();
+    expect($(".fbh-note").textContent).not.toContain("a recording");
     form.destroy();
   });
 });

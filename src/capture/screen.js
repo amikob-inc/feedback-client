@@ -2,9 +2,9 @@
 // video — the reporter picks a window or a screen, one frame is drawn to a canvas, and the tracks
 // are stopped immediately so no sharing indicator lingers. The button is only shown where the API
 // exists (spec §5.4), and a cancelled picker is an ordinary outcome, not an error: the whole
-// function is one try/catch that resolves to `null` rather than ever rejecting, because standing
-// rule 3 (task-10-brief) says none of getDisplayMedia missing, denied, or dismissed may throw out
-// of the panel.
+// function is one try/catch that resolves to `null` rather than ever rejecting, because this
+// library may never break the host application, and a missing, denied or dismissed picker is
+// exactly the kind of thing a reporter or their browser does on purpose.
 import { warnOnce } from "../warn.js";
 
 export const FRAME_WAIT_MS = 200;

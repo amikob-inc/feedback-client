@@ -16,10 +16,10 @@ import { clear, el } from "./dom.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
 
-// Task-10-brief standing rule 3 ("the library may never break the host application"): an app's
-// own `section()` hook is exactly the kind of callback that can throw for reasons outside this
-// module's control. mount.js already guards every such hook with the same pattern (see its
-// `safeCall`); this is that pattern's twin for the one app hook the form itself calls.
+// This library may never break the host application: an app's own `section()` hook is exactly
+// the kind of callback that can throw for reasons outside this module's control. mount.js already
+// guards every such hook with the same pattern (see its `safeCall`); this is that pattern's twin
+// for the one app hook the form itself calls.
 function safeCall(fn, fallback, label) {
   try {
     return fn();
@@ -41,6 +41,11 @@ export function createForm({
   let includeReplay = true;
   let busy = false;
   let pasting = false;
+  // Whether a recording will really be in the next submit, not merely whether the app asked for
+  // one. Starts false (honest: nothing is attached yet) and flips to true only once `api`
+  // confirms the recorder actually started — never sooner, since sooner would be a guess, and the
+  // note that reads this is a promise to the reporter about what is about to leave the building.
+  let replayAttached = false;
   const images = [];
   const urls = [];
 
@@ -59,14 +64,17 @@ export function createForm({
   // aria-atomic: the whole line is replaced on every update (never a partial diff a reporter
   // could misread as the complete list of attachments), so a screen reader must announce it whole
   // too. role="status" + aria-live="polite" covers both the informational states (sending, sent,
-  // left-out-on-submit) and the failure states (standing rule 1: every state must be announced,
-  // not only shown in colour) without interrupting whatever the reporter is doing, the way an
-  // assertive region would.
+  // left-out-on-submit) and the failure states (every state must be announced, not only shown in
+  // colour) without interrupting whatever the reporter is doing, the way an assertive region
+  // would. tabindex="-1": not part of the tab order, but a deliberate, announced place for
+  // keyboard focus to land when the control it was on is about to be removed from under it (see
+  // hideRetry()) — never nowhere, never <body>.
   const message = el(doc, "p", {
     class: "fbh-message",
     role: "status",
     "aria-live": "polite",
     "aria-atomic": "true",
+    tabindex: "-1",
   });
   // A retry button belongs next to the message, never inside it: role="status" is meant to be
   // read as one announcement, and a focusable control nested inside a live region gets its own
@@ -172,12 +180,29 @@ export function createForm({
   function renderNote() {
     // No `dom`: the page copy was removed on 2026-09-21 (note at the top), and this line is what
     // the reporter reads before they send — it must name only what is really attached, never
-    // something that is not (task-10-brief standing rule 4). `describeAttachments` never took a
-    // `dom` argument to begin with any more, so there is nothing here to withhold.
+    // something that is not. `describeAttachments` never took a `dom` argument to begin with any
+    // more, so there is nothing here to withhold.
+    //
+    // The recording clause is driven by `replayAttached`, not the static `options.capture.replay`
+    // flag: the flag only says the app asked for a recording, and stays true even where rrweb
+    // never actually starts. `replayAttached` is the answer `api.replayReady` gave once it
+    // settled, so the note can never promise a recording the bundle will not actually carry.
     note.textContent = describeAttachments({
       screenshot,
-      replay: includeReplay && options.capture.replay ? true : null,
+      replay: includeReplay && replayAttached ? true : null,
       images,
+    });
+  }
+
+  // `api.replayReady` (see mount.js) settles once, to whatever the recorder's real outcome was.
+  // Subscribing here, once, for the life of the form covers every prepare()/open() to come:
+  // "not yet settled" and "settled false" both leave the note's recording clause out until this
+  // resolves true, so a late "yes" is a single, honest, one-way correction — never a flip back to
+  // "no", and never announced before it is real.
+  if (api.replayReady && typeof api.replayReady.then === "function") {
+    api.replayReady.then((ready) => {
+      replayAttached = !!ready;
+      renderNote();
     });
   }
 
@@ -200,30 +225,42 @@ export function createForm({
     ]);
   }
 
-  function renderStrip() {
+  // `renderStrip` rebuilds every thumbnail from scratch, so a Remove button that was just
+  // activated does not survive its own click — the DOM node under the reporter's focus is gone by
+  // the time this function returns. `focusIndex`, when given, is the strip position the removed
+  // attachment used to hold; whatever slides into that position (the next attachment, if any)
+  // gets focus after the rebuild, and the Attach control gets it when nothing did (the position
+  // fell off the end). Screenshot removal always vacates position 0. Omitted entirely on the
+  // calls that only add or replace an attachment: those have nothing to restore.
+  function renderStrip(focusIndex) {
     clear(strip);
     if (screenshot) {
       strip.appendChild(
         thumbnail(screenshot, "Screenshot", () => {
           screenshot = null;
-          renderStrip();
+          renderStrip(0);
         }),
       );
     }
     images.forEach((entry, index) => {
+      const stripPosition = (screenshot ? 1 : 0) + index;
       strip.appendChild(
         thumbnail(
           entry.blob,
           `Image ${index + 1}`,
           () => {
             images.splice(index, 1);
-            renderStrip();
+            renderStrip(stripPosition);
           },
           { "data-image": entry.id },
         ),
       );
     });
     renderNote();
+    if (focusIndex !== undefined) {
+      const removeButtons = strip.querySelectorAll("[data-remove]");
+      (removeButtons[focusIndex] || attachButton).focus();
+    }
   }
 
   function addImage(blob, name = "image.png") {
@@ -271,12 +308,19 @@ export function createForm({
     submitButton.disabled = value;
     submitButton.textContent = value ? "Sending…" : "Send report";
     // A screen reader that has already moved focus away from the message region still gets the
-    // busy state through the accessibility tree (standing rule 2: "the whole thing" usable and
-    // announced, not only the live region's text).
+    // busy state through the accessibility tree: the whole form is usable and announced, not only
+    // the live region's text.
     element.setAttribute("aria-busy", String(value));
   }
 
   function hideRetry() {
+    // send() calls this as its very first step, including when it is the Retry button itself
+    // that was just activated: clear() below removes whatever is focused inside retrySlot before
+    // anything else happens, and an element removed from the document drops focus to <body> with
+    // no further notice to a screen reader. Move focus to the status line first — it is about to
+    // read "Sending…", so a keyboard reporter lands somewhere deliberate and announced, never on
+    // nothing.
+    if (retrySlot.contains(doc.activeElement)) message.focus();
     clear(retrySlot);
   }
 
@@ -338,8 +382,8 @@ export function createForm({
     } catch (err) {
       // Every failure kind (a validation refusal, a 401, a 413, a rate limit, a 5xx, an offline
       // network) already comes through transport.js's own messageFor() as a sentence meant for a
-      // reporter to read, never a bare status code (standing rule 1); the form's only job here is
-      // to show it and let the reporter try again with everything still in place.
+      // reporter to read, never a bare status code; the form's only job here is to show it and let
+      // the reporter try again with everything still in place.
       say(err && err.message ? err.message : "Couldn't send, retry.");
       showRetry();
     } finally {
@@ -381,7 +425,15 @@ export function createForm({
               // captureScreen never rejects by its own contract (src/capture/screen.js); this
               // only guards a caller-supplied override (the `captureScreen` constructor option).
             }
-            if (blob) addImage(blob, "capture.png");
+            if (blob) {
+              addImage(blob, "capture.png");
+            } else {
+              // A denied and a dismissed picker both resolve to `null` here with no way for this
+              // module to tell them apart (captureScreen's own contract collapses every failure
+              // into the same result); every other add-or-remove path already says something, so
+              // this one says the neutral, true thing rather than guessing which happened.
+              say("Screen capture wasn't added.");
+            }
           },
         }),
         fileInput,

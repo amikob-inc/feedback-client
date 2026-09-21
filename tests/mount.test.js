@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mountFeedback, pageContext, resolveButton } from "../src/mount.js";
+import { resetWarnings } from "../src/warn.js";
 
 const run = (fn) => fn();
 
@@ -247,6 +248,61 @@ describe("submit", () => {
     });
     const report = JSON.parse(await transport.submit.mock.calls[0][0].get("report").text());
     expect(typeof report.page.view).toBe("string");
+    handle.destroy();
+  });
+});
+
+// The panel's "what will be sent" note (src/panel/form.js) needs a real answer to "will a
+// recording actually be attached", not the static capture.replay flag it used to read — that flag
+// stays true even where rrweb never starts. `replayReady` on the internal api handed to a panel
+// factory is that answer, settled once (see src/capture/replay.js's own `ready`), never before.
+describe("replayReady (the panel's honest answer about the recording)", () => {
+  function mountWithPanel(options, deps) {
+    let capturedApi = null;
+    const { handle, transport } = mount(options, {
+      ...deps,
+      createPanel: ({ api }) => {
+        capturedApi = api;
+        return { open() {}, close() {}, destroy() {} };
+      },
+    });
+    handle.open(); // ensurePanel() only builds the panel, and its api, once open() is called
+    return { handle, transport, api: () => capturedApi };
+  }
+
+  it("resolves false with no recorder at all when capture.replay is off", async () => {
+    const { handle, api } = mountWithPanel({ capture: { replay: false, screenshot: false } });
+    await expect(api().replayReady).resolves.toBe(false);
+    handle.destroy();
+  });
+
+  it("resolves true once the recorder actually starts, not merely because the flag is on", async () => {
+    const loadRecorder = async () => ({
+      record(options) {
+        options.emit({ type: 2, data: { x: 1 } }, true);
+        return () => {};
+      },
+    });
+    const { handle, api } = mountWithPanel(
+      { capture: { replay: true, screenshot: false } },
+      { loadRecorder, schedule: run },
+    );
+    await expect(api().replayReady).resolves.toBe(true);
+    handle.destroy();
+  });
+
+  it("resolves false when the recorder fails to load, so the note never promises one", async () => {
+    resetWarnings();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const loadRecorder = async () => {
+      throw new Error("blocked");
+    };
+    const { handle, api } = mountWithPanel(
+      { capture: { replay: true, screenshot: false } },
+      { loadRecorder, schedule: run },
+    );
+    await expect(api().replayReady).resolves.toBe(false);
+    expect(warn).toHaveBeenCalled();
     handle.destroy();
   });
 });

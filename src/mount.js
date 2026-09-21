@@ -117,6 +117,13 @@ export function mountFeedback(rawOptions, deps = {}) {
   const replay = options.capture.replay
     ? startReplay(options.capture, { load: deps.loadRecorder, schedule: deps.schedule })
     : null;
+  // What the panel's "what will be sent" note gets to ask, so it can say what will really happen
+  // instead of assuming the static `capture.replay` flag came true. The flag only says the app
+  // asked for a recording; it stays true even where rrweb never actually starts (offline,
+  // blocked, tree-shaken), and only `replay.ready` — settled once the dynamic import and the
+  // first record() call have either succeeded or failed — knows which one happened. A mount with
+  // capture.replay off has no recorder to ask and gets the same `false` a failed one would.
+  const replayReady = replay ? replay.ready : Promise.resolve(false);
   const storage = deps.storage !== undefined ? deps.storage : safeStorage(win);
   const schedule = deps.schedule || idle;
 
@@ -290,8 +297,8 @@ export function mountFeedback(rawOptions, deps = {}) {
   }
 
   const handle = { open, close, submit, list, reply, retry, destroy };
-  // What the panel gets: the same seven functions plus the two it alone needs.
-  const internal = { ...handle, markRead, captureScreenshot: captureNow, options };
+  // What the panel gets: the same seven functions plus the three it alone needs.
+  const internal = { ...handle, markRead, captureScreenshot: captureNow, replayReady, options };
 
   if (button) button.addEventListener("click", onButtonClick);
   // One listing after the first idle callback, so the app's topbar dot is right before anyone
