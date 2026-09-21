@@ -1,0 +1,41 @@
+{
+  "name": "@amikob/feedback-client",
+  "version": "0.1.0",
+  "description": "In-app feedback panel for the amikob dashboards: capture buffers, session replay, screenshot and the report panel, framework-free",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amikob-inc/feedback-client.git"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.js",
+    "./fixtures/status-cases.json": "./fixtures/status-cases.json",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@rrweb/record": "^2.1.4",
+    "modern-screenshot": "^4.7.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
+    "jsdom": "^27.0.0",
+    "prettier": "^3.9.6",
+    "vitest": "^5.0.1"
+  }
+}
