@@ -34,10 +34,12 @@ describe("installErrorBuffer", () => {
     const win = createFakeWindow();
     const buffer = installErrorBuffer({ target: win, now: at });
     win.dispatch("error", { error: Object.assign(new Error("one"), { stack: "s1" }) });
-    win.dispatch("unhandledrejection", { reason: new Error("two") });
+    win.dispatch("unhandledrejection", {
+      reason: Object.assign(new Error("two"), { stack: "s2" }),
+    });
     expect(buffer.entries()).toEqual([
       { t: at(), message: "one", stack: "s1" },
-      { t: at(), message: "two", stack: buffer.entries()[1].stack },
+      { t: at(), message: "two", stack: "s2" },
     ]);
     buffer.uninstall();
   });
