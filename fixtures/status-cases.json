@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "triageTimeoutMinutes": 20,
+  "note": "Shared by amikob-inc/feedback-client (canonical) and amikob-inc/feedback-hub (copy). Changing this file means a pull request in both repositories.",
+  "cases": [
+    {
+      "name": "no dispatch attempt yet",
+      "input": {
+        "dispatchedMinutesAgo": null,
+        "pending": false,
+        "verdict": null,
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "triaging",
+      "label": "Received, being looked at"
+    },
+    {
+      "name": "dispatched five minutes ago, no verdict",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": null,
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "triaging",
+      "label": "Received, being looked at"
+    },
+    {
+      "name": "a pending marker and no verdict",
+      "input": {
+        "dispatchedMinutesAgo": null,
+        "pending": true,
+        "verdict": null,
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "waiting",
+      "label": "Received, waiting"
+    },
+    {
+      "name": "a pending marker beats a stale dispatch",
+      "input": {
+        "dispatchedMinutesAgo": 25,
+        "pending": true,
+        "verdict": null,
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "waiting",
+      "label": "Received, waiting"
+    },
+    {
+      "name": "dispatched 25 minutes ago, no verdict, not pending",
+      "input": {
+        "dispatchedMinutesAgo": 25,
+        "pending": false,
+        "verdict": null,
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "error",
+      "label": "Could not triage"
+    },
+    {
+      "name": "an error verdict",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "error" },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "error",
+      "label": "Could not triage"
+    },
+    {
+      "name": "an error verdict beats a pending marker",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": true,
+        "verdict": { "verdict": "error" },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "error",
+      "label": "Could not triage"
+    },
+    {
+      "name": "needs_info with no reply yet",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "needs_info", "questions": ["Which SKU?"] },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "needs_reply",
+      "label": "Needs your reply"
+    },
+    {
+      "name": "needs_info with a reply after the verdict",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "needs_info", "questions": ["Which SKU?"] },
+        "repliesAfterVerdict": true,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "triaging",
+      "label": "Received, being looked at"
+    },
+    {
+      "name": "answered",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "answered", "answer": "Click Export images." },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "answered",
+      "label": "Answered"
+    },
+    {
+      "name": "unusable",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "unusable", "reason": "The description is empty." },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "not_filed",
+      "label": "Not filed"
+    },
+    {
+      "name": "duplicate of an open issue",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": { "number": 3, "state": "open", "stateReason": null, "labels": ["from-panel"] }
+      },
+      "status": "duplicate",
+      "label": "Already tracked as #3 (open)"
+    },
+    {
+      "name": "duplicate of an issue closed as completed",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": {
+          "number": 3,
+          "state": "closed",
+          "stateReason": "completed",
+          "labels": ["from-panel"]
+        }
+      },
+      "status": "duplicate",
+      "label": "Already tracked as #3 (fixed)"
+    },
+    {
+      "name": "duplicate of an issue closed as not planned",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": {
+          "number": 3,
+          "state": "closed",
+          "stateReason": "not_planned",
+          "labels": ["from-panel"]
+        }
+      },
+      "status": "duplicate",
+      "label": "Already tracked as #3 (closed)"
+    },
+    {
+      "name": "duplicate whose original could not be read",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "duplicate",
+      "label": "Already tracked as #3"
+    },
+    {
+      "name": "filed, the issue could not be read",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "filed",
+      "label": "Filed as #7"
+    },
+    {
+      "name": "filed with no issue number at all",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed" },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "filed",
+      "label": "Filed"
+    },
+    {
+      "name": "filed, open issue with no fix activity",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": { "number": 7, "state": "open", "stateReason": null, "labels": ["from-panel"] },
+        "prs": [],
+        "original": null
+      },
+      "status": "filed",
+      "label": "Filed as #7"
+    },
+    {
+      "name": "filed, open issue labelled ai-candidate only",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": {
+          "number": 7,
+          "state": "open",
+          "stateReason": null,
+          "labels": ["from-panel", "ai-candidate"]
+        },
+        "prs": [],
+        "original": null
+      },
+      "status": "filed",
+      "label": "Filed as #7"
+    },
+    {
+      "name": "filed, open issue labelled ai-working",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": {
+          "number": 7,
+          "state": "open",
+          "stateReason": null,
+          "labels": ["from-panel", "ai-working"]
+        },
+        "prs": [],
+        "original": null
+      },
+      "status": "in_progress",
+      "label": "Fix in progress"
+    },
+    {
+      "name": "filed, open issue with an open pull request",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": { "number": 7, "state": "open", "stateReason": null, "labels": ["from-panel"] },
+        "prs": [{ "number": 9, "state": "open", "merged": false }],
+        "original": null
+      },
+      "status": "in_progress",
+      "label": "Fix in progress"
+    },
+    {
+      "name": "filed, issue closed as completed",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": {
+          "number": 7,
+          "state": "closed",
+          "stateReason": "completed",
+          "labels": ["from-panel"]
+        },
+        "prs": [{ "number": 9, "state": "closed", "merged": true }],
+        "original": null
+      },
+      "status": "fixed",
+      "label": "Fixed"
+    },
+    {
+      "name": "filed, issue closed as not planned",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "repliesAfterVerdict": false,
+        "issue": {
+          "number": 7,
+          "state": "closed",
+          "stateReason": "not_planned",
+          "labels": ["from-panel"]
+        },
+        "prs": [],
+        "original": null
+      },
+      "status": "closed",
+      "label": "Closed"
+    }
+  ]
+}
