@@ -23,7 +23,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:leaks": "FBH_LEAK_REPORT=1 vitest run tests/leak-matrix.test.js tests/leak-harness-selftest.test.js"
   },
   "dependencies": {
     "@rrweb/record": "^2.1.4",

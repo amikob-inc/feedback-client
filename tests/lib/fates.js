@@ -1,0 +1,235 @@
+// What each planted marker is supposed to do, and why.
+//
+// A harness that only asserts "nothing leaks" is switched off the first time something legitimately
+// appears — a session replay exists to reproduce a page, so plenty of page content is published on
+// purpose. So every position gets a fate instead, and the harness asserts both directions: a
+// `withheld` position that appears is a leak, and a `published` position that does not appear means
+// the capture (or the harness) has quietly stopped working. Both are failures.
+//
+// Three things decide a fate, in this order:
+//
+//  1. POLICY — what the library promises. Passwords never leave, whatever the settings. Anything
+//     the app named in `capture.blank` never leaves. Field values do not leave under
+//     `maskAllInputs`. The reporter's own words always leave.
+//  2. MECHANISM — what the capture path structurally cannot see. rrweb never serialises a
+//     `<template>`'s content fragment, for instance. These are not promises, they are facts about
+//     the implementation, and each is written down with the reason it holds. If a future rrweb
+//     starts serialising one of them, the position flips from absent to present and this harness
+//     goes red — which is the point of recording them rather than ignoring them.
+//  3. GAP — something that is published today and should not be, and that no option we pass can
+//     close. Each one is an entry here with a one-line reason and a pointer to the report. A gap
+//     asserts `published`, so the harness stays green while the gap is open and goes red the
+//     moment it closes (and someone then deletes the entry) or a *new* one appears.
+//
+// What is NOT in this file: anything that could be closed by configuration. Those were closed —
+// see src/capture/replay.js and src/buffers/breadcrumbs.js — and their positions now assert
+// `withheld` like any other.
+import { BLANK_SELECTOR } from "./markers.js";
+
+// --------------------------------------------------------------------------------------------
+// Mechanisms: things the capture path cannot see, each with the reason it cannot.
+
+const MECHANISMS = [
+  {
+    id: "template-content",
+    match: (p) => /\/template(-deep)?\//.test(p.id),
+    why: "rrweb walks childNodes, and a <template>'s children live in its .content fragment, which is not among them",
+  },
+  {
+    id: "closed-shadow-root",
+    match: (p) => p.id.includes("/shadow-closed/"),
+    why: "a closed shadow root is not reachable through element.shadowRoot, so rrweb never sees it",
+  },
+  {
+    id: "script-text",
+    match: (p) => p.id.startsWith("script-text/"),
+    why: 'rrweb replaces every <script> text node with the literal "SCRIPT_PLACEHOLDER", and slimDOMOptions.script drops the element as well',
+  },
+  {
+    id: "script-element",
+    match: (p) => p.id.startsWith("attr/script-data/"),
+    why: "slimDOMOptions.script drops <script> elements, attributes and all",
+  },
+  {
+    id: "comment-dropped",
+    match: (p) => p.id.startsWith("comment/"),
+    why: "slimDOMOptions.comment drops comment nodes",
+  },
+  {
+    id: "css-comment",
+    match: (p) => p.id.startsWith("rawtext/style/"),
+    why: "rrweb re-serialises a <style> from its CSSOM rules, which drops CSS comments",
+  },
+  {
+    id: "value-sanitised",
+    match: (p) => /^input\/(color|range)\//.test(p.id),
+    why: "the browser replaces an invalid value for these types with a normalised one, so the raw attribute never reaches the recorder",
+  },
+  {
+    id: "head-meta-dropped",
+    match: (p) => p.id.startsWith("attr/meta-csrf/"),
+    why: "slimDOMOptions.headMetaVerification drops a <meta name=csrf-token> outright. A <meta> with no name rrweb recognises is not dropped, and is ordinary markup",
+  },
+  {
+    id: "value-rejected",
+    match: (p) => /^input\/(number|date|datetime-local|month|week|time)\/property\//.test(p.id),
+    // Not a privacy property: it is why this position cannot hold a marker at all, and saying so
+    // here is what stops it being mistaken for masking that works.
+    why: "assigning a value that is not valid for these input types leaves the live value empty, so there is nothing in the DOM for the recorder to find",
+  },
+];
+
+// --------------------------------------------------------------------------------------------
+// Gaps: published today, should not be, and no option we pass closes it. Every entry is a finding
+// in .superpowers/sdd/2026-09-21-mission-16-client-library/marker-harness-report.md.
+
+const GAPS = [
+  {
+    id: "srcdoc-attribute",
+    match: (p) => p.id.startsWith("attr/srcdoc/") && p.zone === "ordinary",
+    why: "rrweb serialises an <iframe srcdoc> attribute verbatim — a whole document in one attribute, and rrweb has no option for it (report, finding G1)",
+  },
+  {
+    id: "blanked-class",
+    match: (p) => p.id === "attr/class/blanked",
+    why: "rrweb reduces a blocked element to {class, rr_width, rr_height}, so the class name survives the block (report, finding G2)",
+  },
+  {
+    id: "value-attribute-when-live-value-is-empty",
+    match: (p) =>
+      p.zone === "ordinary" &&
+      (/^input\/(number|date|datetime-local|month|week|time|file)\/attribute\//.test(p.id) ||
+        p.id.startsWith("input-cleared/")),
+    why: "rrweb masks a field only when its live .value is truthy; when the live value is empty the raw value= attribute is serialised as an ordinary attribute, masked or not (report, finding G3)",
+  },
+];
+
+// --------------------------------------------------------------------------------------------
+
+const VALUE_KINDS = new Set(["input-value", "editable-text"]);
+
+export function expectedFate(position, settings) {
+  // `blank` only protects anything if the app actually named the selector. With an empty list
+  // the sensitive zones are ordinary page content and are expected to behave like it — which is
+  // the difference between a harness that tests the library and one that tests its own wrapper.
+  const blanking = (settings.blank || []).includes(BLANK_SELECTOR);
+  const zone =
+    !blanking && (position.zone === "sensitive" || position.zone === "blanked")
+      ? "ordinary"
+      : position.zone;
+  const here = { ...position, zone };
+
+  if (zone === "reporter") {
+    return fate("published", "the reporter's own words and choices");
+  }
+  if (zone === "channel") return channelFate(position, settings, blanking);
+
+  // Everything below is page content, and the recording is the only part that carries any.
+  if (!settings.replay) {
+    return fate("withheld", "the recording is off, and it is the only part that carries the page");
+  }
+  // A gap is a statement about what the code really does, so it beats the policy rules below —
+  // except for a password, which no gap may ever be allowed to excuse.
+  if (position.kind !== "password") {
+    for (const gap of GAPS) {
+      if (gap.match(here)) {
+        return { expect: "published", why: gap.why, gap: gap.id, mechanism: null };
+      }
+    }
+  }
+  for (const mechanism of MECHANISMS) {
+    if (mechanism.match(here)) {
+      return { expect: "withheld", why: mechanism.why, mechanism: mechanism.id, gap: null };
+    }
+  }
+  if (position.kind === "password") {
+    return fate("withheld", "a password never leaves, under any settings");
+  }
+  if (position.kind === "always-masked") {
+    return fate("withheld", "a hidden field and a file path never leave, under any settings");
+  }
+  if (zone === "sensitive" || zone === "blanked") {
+    return fate("withheld", "the app named this element in capture.blank");
+  }
+  if (VALUE_KINDS.has(position.kind)) {
+    return settings.maskAllInputs
+      ? fate("withheld", "a field value under maskAllInputs")
+      : fate("published", "a field value with maskAllInputs off");
+  }
+  return fate("published", "ordinary page content: reproducing it is what a session replay is for");
+}
+
+function fate(expect, why) {
+  return { expect, why, gap: null, mechanism: null };
+}
+
+// The buffers are not page serialisation, so they get their own small table. `blankDependent`
+// entries are the ones `capture.blank` decides: the describers read an element's text, labels and
+// data attributes straight off the page, so with the selectors given they must withhold, and with
+// no selectors given the same text is ordinary page content and travels like it.
+const CHANNEL_FATES = {
+  "click-text": ["the text of a clicked element", { blankDependent: true }],
+  "click-aria": ["the aria-label of a clicked element", { blankDependent: true }],
+  "click-data": ["a data-* attribute of a clicked element", { blankDependent: true }],
+  "click-id": ["the id of a clicked element", { blankDependent: true }],
+  "change-label": ["the label of a changed field", { blankDependent: true }],
+  "change-placeholder": ["the placeholder of a changed field", { blankDependent: true }],
+  "change-aria": ["the aria-label of a changed field", { blankDependent: true }],
+  "change-name": ["the name of a changed field", { blankDependent: true }],
+  "change-file-label": ["the label of a changed file field", { blankDependent: true }],
+  "change-password": [
+    "a password value, in every buffer, under every setting",
+    { expect: "withheld" },
+  ],
+  "change-value": ["a field value in a breadcrumb follows maskAllInputs", { maskDependent: true }],
+  "console-arg": [
+    "what the app itself logged: the console buffer's whole purpose",
+    { expect: "published" },
+  ],
+  "network-path": [
+    "origin and path of a failed request, kept on purpose (spec 5.7)",
+    { expect: "published" },
+  ],
+  "network-query": [
+    "a query string can carry a token, and scrubUrl drops it",
+    { expect: "withheld" },
+  ],
+  "route-hash": ["the hash is part of the route a dashboard navigates by", { expect: "published" }],
+  "route-query": [
+    "a route breadcrumb carries path and hash, never a query string",
+    { expect: "withheld" },
+  ],
+  "location-query": [
+    "pageContext drops the query deliberately (a magic-link token lives there) and the recorder's Meta event must not put it back",
+    { expect: "withheld" },
+  ],
+  "document-title": ["the page title names the view being reported on", { expect: "published" }],
+  "image-bytes": ["an image the reporter attached on purpose", { expect: "published" }],
+  "screenshot-bytes": ["the screenshot of the page being reported on", { expect: "published" }],
+};
+
+function channelFate(position, settings, blanking) {
+  const entry = CHANNEL_FATES[position.channel];
+  if (!entry) throw new Error(`no fate declared for channel "${position.channel}"`);
+  const [why, rule] = entry;
+  if (rule.blankDependent) {
+    return blanking
+      ? fate("withheld", `${why} inside a blanked region`)
+      : fate("published", `${why}, with no blank selectors given`);
+  }
+  if (rule.maskDependent) {
+    return settings.maskAllInputs ? fate("withheld", why) : fate("published", why);
+  }
+  // A buffer an app switched off cannot carry anything (spec 5.5).
+  if (position.channel === "console-arg" && settings.console === false) {
+    return fate("withheld", "the console buffer is switched off");
+  }
+  if (position.channel === "network-path" && settings.network === false) {
+    return fate("withheld", "the network buffer is switched off");
+  }
+  return fate(rule.expect, why);
+}
+
+export function listGaps() {
+  return GAPS.map((gap) => ({ id: gap.id, why: gap.why }));
+}
