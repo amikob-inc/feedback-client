@@ -3,10 +3,32 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IMAGE_LOAD_TIMEOUT_MS } from "../src/panel/annotate.js";
 import { createForm } from "../src/panel/form.js";
 import { normalizeOptions } from "../src/options.js";
+import { CAPS } from "../src/bundle.js";
 
 const png = (size = 4) => new Blob([new Uint8Array(size)], { type: "image/png" });
 
-function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen } = {}) {
+// Stands in for the real openAnnotator() the way `captureScreen` already lets a test stand in for
+// screen capture: jsdom can never actually finish opening the real dialog (see the "says so
+// instead of hanging" test below), so a test that needs to drive form.js's own annotate()/stop()
+// wrapper through a *working* dialog needs a controllable fake instead. Moving focus into a real,
+// attached element on open and removing it from the document on close mirrors the two real DOM
+// effects (openAnnotator's own `element.focus()`; close()'s own `removeChild`) that make focus
+// actually leave the triggering Draw button in the first place — without that, a test asserting
+// focus "returns" to the Draw button could pass even if it had never moved.
+function fakeAnnotatorDialog(doc, mount) {
+  const dialog = doc.createElement("div");
+  dialog.tabIndex = -1;
+  mount.appendChild(dialog);
+  dialog.focus();
+  return {
+    element: dialog,
+    close() {
+      if (dialog.isConnected) dialog.remove();
+    },
+  };
+}
+
+function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, openAnnotator } = {}) {
   const options = normalizeOptions({
     hubUrl: "https://hub.example",
     app: "cad",
@@ -27,7 +49,15 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen } = 
     ...apiOverrides,
   };
   const onSubmitted = vi.fn();
-  const form = createForm({ api, options, doc: document, win: window, onSubmitted, captureScreen });
+  const form = createForm({
+    api,
+    options,
+    doc: document,
+    win: window,
+    onSubmitted,
+    captureScreen,
+    openAnnotator,
+  });
   document.body.appendChild(form.element);
   return { api, form, onSubmitted, options };
 }
@@ -359,6 +389,115 @@ describe("createForm", () => {
     form.addImage(png(), "one.png");
     expect(() => form.replaceImage("not-a-real-id", png())).not.toThrow();
     expect($(".fbh-strip").querySelectorAll("[data-image]")).toHaveLength(1);
+    form.destroy();
+  });
+
+  // The hub rejects the *whole* report when an image part is not image/png or image/jpeg (plan's
+  // Global Constraints §9), and addImage() already refuses a wrongly-typed or oversized attachment
+  // before it reaches the bundle — but a flattened drawing from the annotator skipped both checks
+  // and went straight onto the attachment. `toBlob` is asked for "image/png", but nothing enforces
+  // that it got one back, or that the result stayed under the cap: a large enough source image can
+  // easily produce a flattened PNG over 5 MB even though the source attachment was under it.
+  it("refuses a flattened drawing of the wrong type, leaving the original image untouched", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    const before = $(".fbh-strip [data-image] img").src;
+    const wrongType = new Blob([new Uint8Array(4)], { type: "image/gif" });
+    const imageId = $(".fbh-strip [data-image]").dataset.image;
+
+    form.replaceImage(imageId, wrongType);
+
+    expect($(".fbh-message").textContent).toBe(
+      "That drawing could not be attached: only PNG and JPEG images are allowed.",
+    );
+    expect($(".fbh-strip [data-image] img").src).toBe(before);
+    form.destroy();
+  });
+
+  it("refuses a flattened drawing over the 5 MB cap, leaving the original image untouched", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    const before = $(".fbh-strip [data-image] img").src;
+    const tooBig = new Blob([new Uint8Array(CAPS.image + 1)], { type: "image/png" });
+    const imageId = $(".fbh-strip [data-image]").dataset.image;
+
+    form.replaceImage(imageId, tooBig);
+
+    expect($(".fbh-message").textContent).toBe(
+      "That drawing is over 5 MB and could not be attached.",
+    );
+    expect($(".fbh-strip [data-image] img").src).toBe(before);
+    form.destroy();
+  });
+
+  it("refuses a flattened drawing applied to the screenshot just as it would to any other image, leaving the screenshot untouched", async () => {
+    // Exercises the real annotate()/openAnnotator() wrapper (unlike the two tests above, which
+    // call replaceImage() directly): openAnnotator is injectable the same way captureScreen
+    // already is, so this stands in a controllable dialog instead of the real one, which jsdom
+    // can never finish opening (see the "says so instead of hanging" test below).
+    const wrongType = new Blob([new Uint8Array(4)], { type: "image/gif" });
+    const openAnnotator = vi.fn(({ mount, onSave, onClose }) => {
+      const dialog = fakeAnnotatorDialog(document, mount);
+      onSave(wrongType); // mirrors annotate.js's own save(): onSave, then close() unconditionally
+      dialog.close();
+      onClose();
+      return Promise.resolve(dialog);
+    });
+    const { form } = setup({ openAnnotator });
+    await form.prepare(); // takes the automatic screenshot
+    const before = $(".fbh-strip img").src;
+    const drawButton = $(".fbh-strip [data-draw]");
+    drawButton.focus();
+
+    drawButton.click();
+
+    expect(openAnnotator).toHaveBeenCalledTimes(1);
+    expect($(".fbh-message").textContent).toBe(
+      "That drawing could not be attached: only PNG and JPEG images are allowed.",
+    );
+    expect($(".fbh-strip img").src).toBe(before);
+    // Nothing was rebuilt (the change was refused before renderStrip ran), so the Draw button the
+    // reporter activated is still exactly where it was — the same contract as Cancel and Escape
+    // below, reached here by a different route (a rejected save instead of no save at all).
+    expect(document.activeElement).toBe(drawButton);
+    form.destroy();
+  });
+
+  // Focus returning to the triggering Draw button on Cancel and on Escape was previously only
+  // ever demonstrated by driving annotate.js directly (tests/annotate.test.js), never through
+  // form.js's own annotate()/stop() wrapper — the one place that actually restores it. Cancel and
+  // Escape both close the real dialog the same way: close() calls onClose with no onSave ever
+  // having fired (tests/annotate.test.js proves each of those two real UI actions reaches close());
+  // that shared contract, onClose with nothing saved, is what this drives.
+  it("returns focus to the Draw button when the annotator closes without saving, as Cancel and Escape both do", async () => {
+    let closeDialog;
+    const openAnnotator = vi.fn(
+      ({ mount, onClose }) =>
+        new Promise((resolve) => {
+          const dialog = fakeAnnotatorDialog(document, mount);
+          closeDialog = () => {
+            dialog.close();
+            onClose();
+          };
+          resolve(dialog);
+        }),
+    );
+    const { form } = setup({ openAnnotator });
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    const drawButton = $(".fbh-strip [data-image] button[data-draw]");
+    drawButton.focus();
+
+    drawButton.click();
+    expect(openAnnotator).toHaveBeenCalledTimes(1);
+    expect($(".fbh-annotator-mount").hidden).toBe(false);
+
+    closeDialog();
+
+    expect($(".fbh-annotator-mount").hidden).toBe(true);
+    expect(document.activeElement).toBe(drawButton);
     form.destroy();
   });
 

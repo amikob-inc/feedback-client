@@ -13,7 +13,7 @@
 import { CAPS } from "../bundle.js";
 import { isRetryable, labelContext, needsReply, statusLabel, statusTone } from "../status.js";
 import { warnOnce } from "../warn.js";
-import { clear, el, firstLine, relativeTime } from "./dom.js";
+import { el, firstLine, relativeTime } from "./dom.js";
 
 export const POLL_MS = 30000;
 
@@ -45,15 +45,34 @@ function errorRow(doc, item) {
 
 // A link is only rendered when it has both an href and a number to name — a hub response missing
 // either would otherwise become "Issue #undefined" or an anchor with no destination at all.
+//
+// `entry.url` comes from the hub, another origin this client does not control. The hub itself
+// anchors it to `https://` before a verdict is ever filed and overwrites it with GitHub's own
+// address (service/src/verdict.ts), so a `javascript:` or `data:` scheme is not reachable today —
+// but this client must not depend on the server's manners. Only `http:`/`https:` become a real,
+// clickable `href`; anything else renders the same text with nothing to click, rather than either
+// a dead link or a link that runs on click.
+const LINK_SCHEMES = new Set(["http:", "https:"]);
+
+function isSafeLinkUrl(url) {
+  try {
+    return LINK_SCHEMES.has(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
 function linkFor(doc, entry, attr, label) {
   if (!entry || typeof entry.number !== "number" || !entry.url) return null;
+  const text = `${label} #${entry.number}`;
+  if (!isSafeLinkUrl(entry.url)) return el(doc, "span", { class: "fbh-link", [attr]: true, text });
   return el(doc, "a", {
     class: "fbh-link",
     [attr]: true,
     href: entry.url,
     target: "_blank",
     rel: "noreferrer noopener",
-    text: `${label} #${entry.number}`,
+    text,
   });
 }
 
@@ -235,12 +254,63 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     return { onReply, onRetry };
   }
 
+  // A row a colleague is in the middle of using must survive a rebuild untouched: their own
+  // keyboard focus (anywhere in the row, not only the reply box), or reply text they have started
+  // typing but not yet sent. Checked against the *live* DOM node, not the data, because the data
+  // for that row may not have changed at all — a poll rebuilding it for no reason is exactly the
+  // bug this guards against.
+  function isMidEdit(row) {
+    if (row.contains(doc.activeElement)) return true;
+    const draft = row.querySelector("[data-reply]");
+    return !!draft && draft.value.trim() !== "";
+  }
+
+  // Rebuilds the list to match `items`, the way a fetch or an optimistic add always has, but a
+  // mid-edit row (see isMidEdit) is left exactly as it is — the same node, untouched — instead of
+  // being torn down and replaced. A full clear()-and-rebuild here is the rebuild-loses-focus bug
+  // tasks 10 and 11 already had to fix once each, in the form's Remove and its Draw-and-Save; this
+  // is its third and worst home, because render() also runs on the unattended 30-second poll (see
+  // start() below) — the one path where nothing the reporter did triggers the rebuild, so losing
+  // their place here happens without them doing anything at all.
   function render() {
-    clear(listEl);
     empty.hidden = items.length > 0;
     const ctx = context();
     const h = handlers();
-    for (const item of items) listEl.appendChild(renderRow(doc, item, h, ctx));
+
+    const existingById = new Map();
+    for (const node of listEl.children) {
+      if (node.dataset && node.dataset.id) existingById.set(node.dataset.id, node);
+    }
+    const claimed = new Set();
+    const preserved = new Set();
+    const next = items.map((item) => {
+      const id = item && typeof item === "object" ? item.id : undefined;
+      const old = id !== undefined && !claimed.has(id) ? existingById.get(id) : undefined;
+      if (old) claimed.add(id);
+      if (old && isMidEdit(old)) {
+        preserved.add(old);
+        return old;
+      }
+      return renderRow(doc, item, h, ctx);
+    });
+
+    for (const node of [...listEl.children]) {
+      if (!preserved.has(node) && !next.includes(node)) node.remove();
+    }
+    // Reorders to match `next`, but a preserved row is never relocated even if its position
+    // changed: moving an already-attached, currently-focused node — even within the very same
+    // list, even via insertBefore rather than remove-then-append — still drops its focus to
+    // <body> (confirmed by hand against this project's jsdom). A mid-edit row simply keeps its
+    // current position until the edit is done and the next render is free to move it.
+    let ref = listEl.firstChild;
+    for (const node of next) {
+      if (preserved.has(node)) {
+        if (ref === node) ref = ref.nextSibling;
+        continue;
+      }
+      if (ref === node) ref = ref.nextSibling;
+      else listEl.insertBefore(node, ref);
+    }
   }
 
   function rowNode(id) {

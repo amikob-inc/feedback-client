@@ -111,8 +111,8 @@ describe("createStrokes", () => {
     expect(strokes.length).toBe(0);
   });
 
-  // Standing rule 1: "undo with nothing to undo", "clear with nothing to clear", "undo after
-  // clear" — none of these may throw, and none may resurrect anything.
+  // Undo with nothing to undo, clear with nothing to clear, and undo after clear: none of these
+  // may throw, and none may resurrect anything.
   it("undo does nothing with nothing to undo, clear does nothing with nothing to clear, and undo after clear stays empty", () => {
     const strokes = createStrokes();
     expect(() => strokes.undo()).not.toThrow();
@@ -197,10 +197,10 @@ describe("pointFrom", () => {
     expect(pointFrom({ clientX: 210, clientY: 170 }, canvas)).toEqual({ x: 400, y: 300 });
   });
 
-  // Standing rule 2: flatten (and therefore every point on the canvas) at the image's own
-  // resolution, not the screen's. getBoundingClientRect() already reports CSS pixels regardless of
-  // devicePixelRatio, so the mapping must come out identical whether the display is 1x or 3x —
-  // reading window.devicePixelRatio in pointFrom at all would double the scale on a dense display.
+  // Every point on the canvas is flattened at the image's own resolution, not the screen's.
+  // getBoundingClientRect() already reports CSS pixels regardless of devicePixelRatio, so the
+  // mapping must come out identical whether the display is 1x or 3x — reading
+  // window.devicePixelRatio in pointFrom at all would double the scale on a dense display.
   it("gives the same image-pixel result at any devicePixelRatio, for a canvas displayed smaller than the image", () => {
     const canvas = fakeCanvas();
     canvas.width = 1200; // the image's own, full resolution
@@ -264,7 +264,6 @@ describe("loadImageBlob", () => {
     expect(() => image.revoke()).not.toThrow();
   });
 
-  // Standing rule 1: "an image of zero size".
   it("rejects an image that loads with no pixels, instead of handing back a canvas nothing can be drawn on", async () => {
     const helper = fakeImgDoc();
     const promise = loadImageBlob(helper.doc, png());
@@ -384,7 +383,7 @@ describe("flattenAnnotation", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  // Standing rule 4: "a tainted canvas" — toBlob throws synchronously rather than rejecting.
+  // A tainted canvas's toBlob throws synchronously rather than rejecting.
   it("resolves null and warns once when toBlob itself throws synchronously (a tainted canvas)", async () => {
     resetWarnings();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -476,12 +475,11 @@ describe("openAnnotator", () => {
     annotator.close();
   });
 
-  // Standing rule 1: "a stroke that starts outside and ends inside" — starting a pointerdown
-  // outside the canvas never reaches this module at all, since the listener lives on the canvas
-  // element itself; nothing here needs to special-case it. This locks in the opposite and more
-  // dangerous direction: a stroke that starts on the canvas must keep extending however far the
-  // pointer strays off it, because the move/up listeners are deliberately on `doc`, not the
-  // canvas (rule 1: "a pointer that leaves the canvas mid-stroke and comes back").
+  // A stroke that starts outside the canvas never reaches this module at all, since the
+  // pointerdown listener lives on the canvas element itself; nothing here needs to special-case
+  // it. This locks in the opposite and more dangerous direction: a stroke that starts on the
+  // canvas must keep extending however far the pointer strays off it and comes back, because the
+  // move/up listeners are deliberately on `doc`, not the canvas.
   it("keeps extending a stroke through pointer positions outside the canvas, and back", async () => {
     const { canvas } = await open();
     canvas.listeners.pointerdown({ clientX: 10, clientY: 20, preventDefault() {} }); // -> (0, 0)
@@ -499,8 +497,8 @@ describe("openAnnotator", () => {
     expect(lineTos).toContain("400,300");
   });
 
-  // Standing rule 1: "two pointers at once" — a second finger touching down mid-stroke must not
-  // hijack or interleave with the stroke already in progress.
+  // A second finger touching down mid-stroke must not hijack or interleave with the stroke
+  // already in progress.
   it("ignores a second pointer that comes down while the first is still drawing", async () => {
     const { canvas } = await open();
     canvas.listeners.pointerdown({ clientX: 10, clientY: 20, pointerId: 1, preventDefault() {} });
@@ -525,7 +523,6 @@ describe("openAnnotator", () => {
     expect(lineTos.some(([, x, y]) => x === 400 && y === 300)).toBe(true);
   });
 
-  // Standing rule 1: "an image that fails to load".
   it("fails gracefully, without throwing, when the image cannot be loaded", async () => {
     resetWarnings();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -545,8 +542,8 @@ describe("openAnnotator", () => {
     expect(() => annotator.close()).not.toThrow();
   });
 
-  // Standing rule 1: "an image of zero size" — guards a `loadImage` override that hands one back
-  // anyway (loadImageBlob's own rejection is covered above).
+  // Guards a `loadImage` override that hands back a zero-size image anyway (loadImageBlob's own
+  // rejection is covered above).
   it("fails gracefully, without throwing, for an image with zero size", async () => {
     resetWarnings();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -565,7 +562,6 @@ describe("openAnnotator", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  // Standing rule 4: "no 2D context".
   it("fails gracefully, without throwing, when the canvas has no 2D context", async () => {
     resetWarnings();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -586,10 +582,10 @@ describe("openAnnotator", () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  // Standing rule 4: never silently discard the reporter's marks. A save that can't produce a
-  // blob (an enormous image, a tainted canvas, an unsupported encode — all of which collapse to
-  // the same "no blob" outcome by the time openAnnotator sees them) must say so and leave the
-  // drawing in place, not close as if it worked.
+  // Never silently discard the reporter's marks: a save that can't produce a blob (an enormous
+  // image, a tainted canvas, an unsupported encode — all of which collapse to the same "no blob"
+  // outcome by the time openAnnotator sees them) must say so and leave the drawing in place, not
+  // close as if it worked.
   it("keeps the dialog open and says so when the drawing can't be saved, instead of discarding it silently", async () => {
     const canvas = fakeCanvas();
     canvas.toBlob = (cb) => cb(null);

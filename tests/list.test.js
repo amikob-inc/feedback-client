@@ -299,6 +299,33 @@ describe("renderRow", () => {
     expect(row.querySelector("a[data-pr]")).toBe(null);
   });
 
+  it("never turns a non-http(s) issue/PR URL into a clickable href, even one the hub does not send today", () => {
+    // The hub anchors `issueUrl` to `https://` before it ever reaches a client and overwrites it
+    // with GitHub's own address (service/src/verdict.ts) — this is defence in depth, not a
+    // reachable-today bug: the client must not depend on the server's manners.
+    const row = renderRow(
+      document,
+      item({
+        status: "in_progress",
+        label: "Fix in progress",
+        issue: { number: 7, url: "javascript:alert(1)" },
+        duplicateOf: { number: 8, url: "data:text/html,<script>alert(1)</script>" },
+        pullRequest: { number: 9, url: "https://github.com/a/b/pull/9" },
+      }),
+      {},
+      { me: "me", now: now() },
+    );
+    // No anchor at all for either unsafe scheme — nothing to click, nothing that runs.
+    expect(row.querySelector("a[data-issue]")).toBe(null);
+    expect(row.querySelector("a[data-duplicate]")).toBe(null);
+    // The text still says what it would have said, just not as a link.
+    expect(row.querySelector("[data-issue]").textContent).toBe("Issue #7");
+    expect(row.querySelector("[data-issue]").hasAttribute("href")).toBe(false);
+    expect(row.querySelector("[data-duplicate]").textContent).toBe("Issue #8");
+    // A real http(s) URL alongside the two bad ones is unaffected.
+    expect(row.querySelector("a[data-pr]").href).toBe("https://github.com/a/b/pull/9");
+  });
+
   it("does not throw and shows a placeholder when a whole row is unrenderable", () => {
     // A totally malformed item (not even an object) must cost only itself.
     const row = renderRow(document, null, {}, { me: "me", now: now() });
@@ -555,6 +582,36 @@ describe("createList", () => {
     list.destroy();
   });
 
+  it("keeps keyboard focus inside the row (not dropped to body) after a successful reply re-renders it", async () => {
+    // The retry test above proves `updateRow`'s focus handling once; `onReply`'s success path
+    // shares that exact same applyUpdate -> updateRow mechanism (src/panel/list.js), but nothing
+    // committed drove it through a reply until now — a gap the review found by hand.
+    const { list, api } = setup({
+      list: async () => ({
+        items: [
+          item({
+            status: "needs_reply",
+            label: "Needs your reply",
+            verdict: { verdict: "needs_info", questions: ["Which SKU?"], receivedAt: "t" },
+          }),
+        ],
+        nextCursor: null,
+      }),
+    });
+    await list.refresh();
+    document.querySelector("[data-reply]").value = "SKU 12";
+    const send = document.querySelector("[data-send]");
+    send.focus();
+    send.click();
+    await vi.waitFor(() => expect(api.reply).toHaveBeenCalledWith("r1", "SKU 12"));
+    await vi.waitFor(() =>
+      expect(document.querySelector(".fbh-pill").textContent).toBe("Received, being looked at"),
+    );
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.querySelector(".fbh-row").contains(document.activeElement)).toBe(true);
+    list.destroy();
+  });
+
   it("announces the new status in the row's live region after a successful retry, not only by recolouring the pill", async () => {
     const { list } = setup({
       list: async () => ({
@@ -626,5 +683,115 @@ describe("createList", () => {
     await vi.advanceTimersByTimeAsync(POLL_MS * 3);
     expect(api.list).toHaveBeenCalledTimes(2);
     list.destroy();
+  });
+
+  it("does not discard an in-progress reply draft or move focus when the unattended poll refreshes the list", async () => {
+    // This is the fourth appearance of the rebuild-loses-focus class of bug in this library
+    // (the form's Remove, the form's Draw-and-Save, and updateRow's own reply/retry re-render are
+    // the other three) — and the worst version of it, because nothing the reporter did triggers
+    // this rebuild: the 30-second poll in start()/refresh() below fires on its own.
+    vi.useFakeTimers();
+    try {
+      const { list, api } = setup({
+        list: vi.fn(async () => ({
+          items: [
+            item({
+              status: "needs_reply",
+              label: "Needs your reply",
+              verdict: { verdict: "needs_info", questions: ["Which SKU?"], receivedAt: "t" },
+            }),
+          ],
+          nextCursor: null,
+        })),
+      });
+      list.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(api.list).toHaveBeenCalledTimes(1);
+      const box = document.querySelector("[data-reply]");
+      box.value = "still typing this";
+      box.focus();
+      expect(document.activeElement).toBe(box);
+
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(api.list).toHaveBeenCalledTimes(2); // the poll really ran, it just didn't rebuild the row
+
+      const boxNow = document.querySelector("[data-reply]");
+      expect(boxNow).toBe(box); // the very same node — not merely one with the same value
+      expect(boxNow.value).toBe("still typing this");
+      expect(document.activeElement).toBe(box);
+      list.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves an unsent draft on a poll even when the reply box does not currently have focus", async () => {
+    // isMidEdit has two independent reasons to preserve a row (focus, and unsent draft text); the
+    // test above always has both true together, which would not by itself catch either check
+    // being deleted on its own. This one drives the draft-only half.
+    vi.useFakeTimers();
+    try {
+      const { list, api } = setup({
+        list: vi.fn(async () => ({
+          items: [
+            item({
+              status: "needs_reply",
+              label: "Needs your reply",
+              verdict: { verdict: "needs_info", questions: ["Which SKU?"], receivedAt: "t" },
+            }),
+          ],
+          nextCursor: null,
+        })),
+      });
+      list.start();
+      await vi.advanceTimersByTimeAsync(0);
+      const box = document.querySelector("[data-reply]");
+      box.value = "still typing this";
+      box.blur();
+      document.body.focus();
+      expect(document.querySelector("[data-reply]").contains(document.activeElement)).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+      expect(api.list).toHaveBeenCalledTimes(2);
+      expect(document.querySelector("[data-reply]")).toBe(box);
+      expect(document.querySelector("[data-reply]").value).toBe("still typing this");
+      list.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still updates every other row on the same poll that leaves a mid-edit row alone", async () => {
+    vi.useFakeTimers();
+    try {
+      const list_ = vi.fn(async () => ({
+        items: [
+          item({ id: "editing", status: "needs_reply", label: "Needs your reply" }),
+          item({ id: "quiet", status: "triaging", label: "Received, being looked at" }),
+        ],
+        nextCursor: null,
+      }));
+      const { list } = setup({ list: list_ });
+      list.start();
+      await vi.advanceTimersByTimeAsync(0);
+      document.querySelector('[data-id="editing"] [data-reply]').value = "draft";
+
+      list_.mockResolvedValue({
+        items: [
+          item({ id: "editing", status: "needs_reply", label: "Needs your reply" }),
+          item({ id: "quiet", status: "waiting", label: "Received, waiting" }),
+        ],
+        nextCursor: null,
+      });
+      await vi.advanceTimersByTimeAsync(POLL_MS);
+
+      expect(document.querySelector('[data-id="editing"] [data-reply]').value).toBe("draft");
+      expect(document.querySelector('[data-id="quiet"] .fbh-pill').textContent).toBe(
+        "Received, waiting",
+      );
+      list.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

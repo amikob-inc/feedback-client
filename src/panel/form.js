@@ -12,7 +12,7 @@ import {
 } from "../capture/screen.js";
 import { defaultSection } from "../options.js";
 import { warnOnce } from "../warn.js";
-import { openAnnotator } from "./annotate.js";
+import { openAnnotator as defaultOpenAnnotator } from "./annotate.js";
 import { clear, el } from "./dom.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
@@ -30,6 +30,36 @@ function safeCall(fn, fallback, label) {
   }
 }
 
+function isAcceptedImage(blob) {
+  return !!blob && ACCEPTED_IMAGE_TYPES.includes(blob.type);
+}
+
+function isWithinImageCap(blob) {
+  return blob.size <= CAPS.image;
+}
+
+// The same two checks addImage() applies to a freshly attached image (file picker, paste, screen
+// capture), worded for a freshly attached one.
+function attachProblem(blob) {
+  if (!isAcceptedImage(blob)) return "Only PNG and JPEG images can be attached.";
+  if (!isWithinImageCap(blob)) return "That image is over 5 MB.";
+  return null;
+}
+
+// The hub rejects the *whole* report when an image part is not image/png or image/jpeg (plan's
+// Global Constraints §9), and it enforces the same 5 MB cap addImage() already does. `toPngBlob`
+// in annotate.js asks canvas.toBlob for "image/png", but asking is not the same as getting one
+// back, and a large enough source image can flatten into a PNG over the cap even when the source
+// attachment was under it — so a flattened drawing needs the identical two checks before it
+// replaces an attachment, worded for what actually happened (a drawing, not a new attachment).
+function drawProblem(blob) {
+  if (!isAcceptedImage(blob)) {
+    return "That drawing could not be attached: only PNG and JPEG images are allowed.";
+  }
+  if (!isWithinImageCap(blob)) return "That drawing is over 5 MB and could not be attached.";
+  return null;
+}
+
 export function createForm({
   api,
   options,
@@ -37,6 +67,7 @@ export function createForm({
   win = doc.defaultView,
   onSubmitted = () => {},
   captureScreen = defaultCaptureScreen,
+  openAnnotator = defaultOpenAnnotator,
 }) {
   let screenshot = null;
   let includeReplay = true;
@@ -266,6 +297,11 @@ export function createForm({
           },
           (blob) =>
             annotate(blob, (flattened) => {
+              const problem = drawProblem(flattened);
+              if (problem) {
+                say(problem);
+                return;
+              }
               screenshot = flattened;
               renderStrip({ index: 0, selector: "[data-draw]" });
             }),
@@ -337,12 +373,9 @@ export function createForm({
   }
 
   function addImage(blob, name = "image.png") {
-    if (!blob || !ACCEPTED_IMAGE_TYPES.includes(blob.type)) {
-      say("Only PNG and JPEG images can be attached.");
-      return false;
-    }
-    if (blob.size > CAPS.image) {
-      say("That image is over 5 MB.");
+    const problem = attachProblem(blob);
+    if (problem) {
+      say(problem);
       return false;
     }
     if (images.length >= CAPS.images) {
@@ -357,6 +390,15 @@ export function createForm({
   function replaceImage(id, blob) {
     const index = images.findIndex((one) => one.id === id);
     if (index === -1) return;
+    // A drawing that comes back the wrong type or over the cap is discarded, not the image it was
+    // drawn on: the original attachment stays exactly as it was, the same outcome annotate.js's
+    // own save() already gives a canvas that cannot be flattened at all (see its `!flattened`
+    // branch) — this only differs by which check refused it.
+    const problem = drawProblem(blob);
+    if (problem) {
+      say(problem);
+      return;
+    }
     images[index].blob = blob;
     renderStrip({ index: (screenshot ? 1 : 0) + index, selector: "[data-draw]" });
   }

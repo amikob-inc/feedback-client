@@ -6,11 +6,11 @@
 // devicePixelRatio never appears in this file, deliberately, because getBoundingClientRect()
 // already reports CSS pixels regardless of it, and multiplying by it again would double-count.
 //
-// This library may never break the host app (standing rule 4): every place a real canvas can
-// legitimately fail — no 2D context, drawImage refusing a broken image, toBlob missing or
-// returning null, a tainted canvas throwing synchronously, an image that never fires load *or*
-// error — is caught here and turned into warnOnce() plus a graceful `null` / `{element: null}`,
-// never an uncaught exception or a hung promise.
+// This library may never break the host app: every place a real canvas can legitimately fail —
+// no 2D context, drawImage refusing a broken image, toBlob missing or returning null, a tainted
+// canvas throwing synchronously, an image that never fires load *or* error — is caught here and
+// turned into warnOnce() plus a graceful `null` / `{element: null}`, never an uncaught exception
+// or a hung promise.
 //
 // jsdom has no real canvas, so tests/annotate.test.js stands a fake context/canvas in for "a
 // browser that refuses" — see that file's own notes on what is and is not proven that way.
@@ -119,8 +119,7 @@ export function loadImageBlob(doc, blob, { timeoutMs = IMAGE_LOAD_TIMEOUT_MS } =
       clearTimeout(timer);
       // A decoded image with no pixels (a broken or empty source that still fires `load`) can't be
       // drawn on meaningfully, and on some engines drawImage/toBlob on a 0×0 canvas throws rather
-      // than no-op — treated the same as any other unreadable image (rule 1: "an image of zero
-      // size").
+      // than no-op — treated the same as any other unreadable image.
       if (!(element.naturalWidth > 0 && element.naturalHeight > 0)) {
         revoke();
         reject(new Error("the image has no size"));
@@ -238,7 +237,8 @@ export async function openAnnotator({
   canvas.height = image.height;
   canvas.className = "fbh-annotator-canvas";
   // Without this, a touch drag on the canvas scrolls the page instead of drawing on most mobile
-  // browsers; a mouse or pen is unaffected either way (rule 1: "a touch device with no mouse").
+  // browsers; a mouse or pen is unaffected either way, so this is safe on a touch device with no
+  // mouse too.
   if (canvas.style) canvas.style.touchAction = "none";
   const ctx = context2d(canvas);
   if (!ctx) {
@@ -250,7 +250,7 @@ export async function openAnnotator({
   const strokes = createStrokes();
   // The pointer id that owns the stroke in progress, or null when none does. A second pointer
   // going down mid-stroke (two fingers, a stylus while a finger is still on the glass) is ignored
-  // rather than hijacking or interleaving with the first (rule 1: "two pointers at once").
+  // rather than hijacking or interleaving with the first.
   // event.pointerId is undefined for plain mouse events and for the synthetic events a test
   // dispatches, so undefined is always treated as "the" pointer rather than a stray second one.
   let activePointerId = null;
@@ -282,9 +282,9 @@ export async function openAnnotator({
   function onMove(event) {
     if (!strokes.isDrawing() || !samePointer(event)) return;
     // Moving off the canvas and back is fine: these listeners are on `doc`, not the canvas, so a
-    // stroke keeps extending by client position however far the pointer strays, same as any native
-    // drawing app (rule 1: "a pointer that leaves the canvas mid-stroke and comes back"). The 2D
-    // context clips drawing to the canvas's own bounds on its own; nothing here needs to.
+    // stroke keeps extending by client position however far the pointer strays and however often
+    // it leaves the canvas and comes back, same as any native drawing app. The 2D context clips
+    // drawing to the canvas's own bounds on its own; nothing here needs to.
     strokes.extend(pointFrom(event, canvas));
     redraw();
   }
@@ -344,8 +344,8 @@ export async function openAnnotator({
   const stage = el(doc, "div", { class: "fbh-annotator-stage" });
   appendIfNode(stage, canvas);
   // A screen reader gets this instead of trying to describe pixels; it also tells a keyboard-only
-  // reporter, in so many words, what they can and cannot do here (rule 3): the marking itself needs
-  // a pointer, everything else is an ordinary, labelled button.
+  // reporter, in so many words, what they can and cannot do here: the marking itself needs a
+  // pointer, everything else is an ordinary, labelled button.
   stage.appendChild(
     el(doc, "p", {
       class: "fbh-annotator-hint",
@@ -405,8 +405,8 @@ export async function openAnnotator({
   mount.appendChild(element);
   redraw();
   // Moves keyboard focus into the dialog it just opened, so a keyboard-only reporter isn't left
-  // behind on whatever they activated to get here (rule 3) — the dialog itself is the sensible
-  // landing spot since there is no single "first" control that reads better than the others.
+  // behind on whatever they activated to get here — the dialog itself is the sensible landing
+  // spot since there is no single "first" control that reads better than the others.
   if (typeof element.focus === "function") element.focus();
   return { element, close };
 }
