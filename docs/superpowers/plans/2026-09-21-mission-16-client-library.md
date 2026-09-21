@@ -1,10 +1,33 @@
 # Feedback client library implementation plan
 
+> **2026-09-21 — the DOM snapshot (the `dom` part) is removed from this plan.** Task 5 built
+> `src/capture/dom.js`: a bespoke copy of the reporter's page, sanitised by walking a clone and
+> deleting what looked dangerous. Three consecutive adversarial reviews got sensitive data through
+> it, each time through a different hiding place, each time with masking on and the sensitive
+> elements explicitly named for blanking (`.superpowers/sdd/2026-09-21-mission-16-client-library/`
+> `review-5.md`, `re-review-5.md`, `re-review-5b.md`). The root cause is the method, not the three
+> bugs: it copies everything and then removes what is dangerous — a denylist over a format with no
+> fixed inventory of hiding places — and it decides in one walk and writes in another, so the two
+> can disagree. Every leak lived in that gap.
+>
+> **The owner's decision is the safest option: the library sends no bespoke page copy at all** —
+> not a hardened one, not a shape-only one. Evidence comes from the screenshot and from the rrweb
+> session recording, whose own first event is a masked page snapshot made by a mature library;
+> rrweb's snapshot is **not** to be sent as a separate part either. `src/capture/dom.js` and
+> `tests/dom-snapshot.test.js` are deleted, and the `dom` part is gone from the bundle, its caps,
+> `describeAttachments` and `src/mount.js`. `src/capture/gzip.js` stays — the replay needs it.
+>
+> The tasks below are corrected accordingly from **Global Constraints** onwards. Tasks 5 and 9 are
+> left as the historical record of what was built; their snapshot code no longer exists and must
+> not be rebuilt. The hub is unaffected: its `dom` part was always optional
+> (`service/src/intake.ts` reads it with `form.get("dom")` behind an `instanceof File` check, and
+> `report` is the only required part), so a report with no `dom` part is a report it accepts.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build `@amikob/feedback-client` v0.1.0: the framework-free browser library that captures what happened in an app, shows the "report an issue or suggestion" panel, and talks to the feedback hub — installable by git tag by cad-dashboard and, later, the FWD dashboard.
 
-**Architecture:** Four in-memory ring buffers (console, errors, network, breadcrumbs) and an rrweb recorder run from mount; at submit a pure bundle builder turns them plus a screenshot, a DOM snapshot and the replay into one `multipart/form-data` POST to the hub. `mountFeedback()` is headless — buffers, transport and the report/list/reply/retry functions — and the Shadow-DOM panel is a consumer of that same API, so an app can bring its own UI. Every module is a leaf or close to it: the buffers, the bundle builder, the status map and the transport are pure and testable without a DOM; only `src/panel/*` and `src/capture/*` touch one.
+**Architecture:** Four in-memory ring buffers (console, errors, network, breadcrumbs) and an rrweb recorder run from mount; at submit a pure bundle builder turns them plus a screenshot and the replay into one `multipart/form-data` POST to the hub. `mountFeedback()` is headless — buffers, transport and the report/list/reply/retry functions — and the Shadow-DOM panel is a consumer of that same API, so an app can bring its own UI. Every module is a leaf or close to it: the buffers, the bundle builder, the status map and the transport are pure and testable without a DOM; only `src/panel/*` and `src/capture/*` touch one.
 
 **Tech Stack:** Plain ES modules (no build step), JavaScript with JSDoc plus a hand-written `types/index.d.ts`, pnpm, ESLint flat config with `no-undef`, Prettier, Vitest (node by default, jsdom per file), Playwright against a `node:http` stub hub, GitHub Actions. Lazy runtime dependencies: `@rrweb/record` ^2.1.4 and `modern-screenshot` ^4.7.0.
 
@@ -19,14 +42,14 @@
 - Size budget: the library's own code **under 15 KB gzipped** (minified, the two lazy dependencies excluded); the recorder is about 35 KB gzipped and lazy.
 - Buffer sizes, verbatim: console **200 entries, each cut at 1 KB**; errors **20**; network **50**, kept when status ≥ 400, thrown, or slower than **3 s**; breadcrumbs **100**; click text cut at **60** characters; changed input values cut at **40**.
 - Replay: `checkoutEveryNms: 60000`, `maskInputOptions: { password: true }`, `sampling: { mousemove: 50, scroll: 150, input: "last" }`, `recordCanvas: false`; two segments (current and previous, 60–120 s); over **8 MB** serialized the previous segment is dropped first.
-- Bundle caps, verbatim: `report` 512 KB, `screenshot` 5 MB, `dom` 3 MB compressed, `replay` 8 MB compressed, `image` 6 files of 5 MB each, total under **25 MB**. Report text ≤ **5,000** characters, a reply ≤ **2,000** characters.
+- Bundle caps, verbatim: `report` 512 KB, `screenshot` 5 MB, `replay` 8 MB compressed, `image` 6 files of 5 MB each, total under **25 MB**. Report text ≤ **5,000** characters, a reply ≤ **2,000** characters. (The hub's own `LIMITS` also has `dom` 3 MB; the client stopped sending that part on 2026-09-21 — see the note at the top — so `CAPS` has no `dom` key.)
 - Screenshot options: `domToBlob(document.body, { scale: 1, timeout: 5000 })`.
 - Mount option keys, verbatim and exhaustive: `hubUrl`, `app`, `env`, `version`, `getToken`, `user`, `section`, `sections`, `types`, `button`, `theme`, `onSummary`, `capture`; `capture` keys are `replay`, `screenshot`, `console`, `network`, `maskAllInputs`, `blank`. **Unknown options throw at mount.**
 - Handle, verbatim: `mountFeedback()` returns `{ open, close, submit(fields), list(), reply(id, text), retry(id), destroy }`.
 - `hubUrl` empty or undefined: the feature is off and the button is hidden. `getToken` returning `null` disables submit with "Sign in to report".
 - Theming custom properties, verbatim: `--fbh-bg`, `--fbh-panel`, `--fbh-text`, `--fbh-muted`, `--fbh-hairline`, `--fbh-border`, `--fbh-accent`, `--fbh-accent-on`, `--fbh-danger`, `--fbh-success`, `--fbh-tag-bg`, `--fbh-tag-text`, `--fbh-font`. The host element's id is `fbh-host` and carries `data-theme`.
 - Status strings the panel shows, verbatim (they are `statusLabel`'s output in the hub): `Received, being looked at`, `Received, waiting`, `Filed as #N` (`Filed` with no number), `Fix in progress`, `Fixed`, `Closed`, `Answered`, `Already tracked as #M` (` (open)`, ` (fixed)`, ` (closed)` appended when the original's state is known), `Needs your reply`, `Not filed`, `Could not triage`.
-- Privacy: passwords are always masked in replay, DOM snapshot and breadcrumbs; `maskAllInputs: true` masks every typed value in all three; `blank: [...]` blanks matching elements in the replay (`blockSelector`) and the DOM snapshot; request headers, cookies and **query strings are never captured**; the only network destination is `hubUrl`; no third-party calls.
+- Privacy: passwords are always masked in the replay and the breadcrumbs; `maskAllInputs: true` masks every typed value in both; `blank: [...]` blanks matching elements in the replay (`blockSelector`); request headers, cookies and **query strings are never captured**; the only network destination is `hubUrl`; no third-party calls. (Both capture keys stay: they are rrweb's, and were never only the snapshot's. Since 2026-09-21 no bespoke page copy is sent at all — see the note at the top.)
 - Failure handling: a patch that throws falls back to the original function and the library logs **once** with `console.warn`; a failed screenshot is omitted, not fatal; a failed submit keeps the form and offers Retry; `401` says "Your session expired; sign in again"; `413` says which attachment to drop.
 - Line endings **LF** everywhere; `pnpm lint` exits 0 (warnings allowed); `pnpm format:check` and `pnpm test` pass; conventional commit messages; delete, don't comment out.
 - The hub is another origin and every client route checks the `Origin` header against the app's anchored patterns. CORS allows only the headers `Authorization` and `Content-Type` and no credentials: **never send a custom header and never `credentials: "include"`**.
@@ -72,7 +95,6 @@ The hub at `amikob-inc/feedback-hub` is built and deployed; where it and §5/§6
 | `src/buffers/breadcrumbs.js` | clicks, changes, submits, route changes, visibility, online/offline; `describeClickTarget`, `describeFieldChange` |
 | `src/buffers/install.js` | `installBuffers({ win, doc, capture })` — the four buffers behind one handle with one `uninstall()` |
 | `src/capture/gzip.js` | `gzip(text)` through `CompressionStream`, `null` when it is missing |
-| `src/capture/dom.js` | `snapshotDom(doc, { maskAllInputs, blank })`: clone, stamp values, mask, drop `<script>`, blank selectors |
 | `src/capture/replay.js` | `createSegments`, `serializeReplay`, `rrwebOptions`, `startReplay` (lazy recorder, idle start, two-segment checkout) |
 | `src/capture/screenshot.js` | `captureScreenshot()` through the lazy `modern-screenshot`, host element filtered out, 5 MB cap |
 | `src/capture/screen.js` | `captureScreen({ doc, win })`: `getDisplayMedia` to one PNG still, tracks stopped |
@@ -1528,6 +1550,12 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ---
 
 ### Task 5: The DOM snapshot and gzip
+
+> **Superseded, 2026-09-21 — do not build the snapshot half of this task.** `src/capture/dom.js`
+> and `tests/dom-snapshot.test.js` were built, reviewed three times, and deleted; only `src/bytes.js`
+> and `src/capture/gzip.js` survive from this task, and gzip now serves the replay alone. Everything
+> below about `snapshotDom`, `stampValues`, `blankElements` and `BLANKED_ATTR` is kept as the record
+> of what was tried and why it was withdrawn — see the note at the top of this plan.
 
 **Files:**
 - Create: `src/bytes.js`, `src/capture/gzip.js`, `src/capture/dom.js`
@@ -3385,6 +3413,10 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 9: The options, the "seen" map and the headless mount API
 
+> **Amended, 2026-09-21:** this task was built as written, then `domPart()`, the `snapshotDom`
+> import and the bundle's `dom:` argument were removed from `src/mount.js` with the rest of the
+> page copy (note at the top). Read the file, not the snippet below, for what `submit()` attaches.
+
 **Files:**
 - Create: `src/options.js`, `src/seen.js`, `src/mount.js`, `src/index.js`
 - Test: `tests/options.test.js`, `tests/seen.test.js`, `tests/mount.test.js`
@@ -4592,7 +4624,7 @@ describe("createForm", () => {
     $(".fbh-strip button[data-remove]").click();
     expect($(".fbh-strip").textContent).not.toContain("Screenshot");
     expect($(".fbh-note").textContent).toBe(
-      "What will be sent: a copy of the page, a recording of the last minute or two, the console and network log.",
+      "What will be sent: a recording of the last minute or two, the console and network log.",
     );
     form.destroy();
   });
@@ -4868,9 +4900,10 @@ export function createForm({
   }
 
   function renderNote() {
+    // No `dom`: the page copy was removed on 2026-09-21 (note at the top), and this line is what
+    // the reporter reads before they send — it must name only what is really attached.
     note.textContent = describeAttachments({
       screenshot,
-      dom: true,
       replay: includeReplay && options.capture.replay ? true : null,
       images,
     });
@@ -7022,7 +7055,9 @@ for (const theme of ["light", "dark"]) {
     );
 
     const bundle = await page.evaluate(async (hub) => (await fetch(`${hub}/_stub/last`)).json(), HUB);
-    expect(bundle.parts.sort()).toEqual(["dom", "replay", "report", "screenshot"]);
+    // Exactly these three, asserted whole: the page copy was removed on 2026-09-21 (note at the
+    // top), and a `dom` part appearing here again is the regression this line exists to catch.
+    expect(bundle.parts.sort()).toEqual(["replay", "report", "screenshot"]);
     expect(bundle.report.client).toMatch(/^feedback-client\//);
     expect(bundle.report.app).toBe("cad");
     expect(bundle.report.type).toBe("Question");
@@ -7164,7 +7199,7 @@ describe("the size budget", () => {
 
 Add `"size": "node tools/size.mjs"` to the scripts in `package.json`.
 
-- [ ] 9. Run `pnpm test`. If the budget test fails, print the number with `pnpm size` and cut in this order until it passes, re-running `pnpm test` after each: collapse the comment blocks in `src/panel/styles.js` (the CSS string ships verbatim, comments and all); shorten the CSS by removing the `@media` block's duplicated properties and merging the `.fbh-pill-*` rules; move the rarely used `src/panel/annotate.js` behind a dynamic `import()` in `src/panel/form.js`'s `annotate()` (it is only needed once someone clicks the pen). Record the final number in the pull request description.
+- [ ] 9. Run `pnpm test`. The budget has more headroom than this step assumed when it was written: `src/capture/dom.js` (375 lines, the third-largest module in `src/`) left the bundle with the page copy on 2026-09-21. If the budget test still fails, print the number with `pnpm size` and cut in this order until it passes, re-running `pnpm test` after each: collapse the comment blocks in `src/panel/styles.js` (the CSS string ships verbatim, comments and all); shorten the CSS by removing the `@media` block's duplicated properties and merging the `.fbh-pill-*` rules; move the rarely used `src/panel/annotate.js` behind a dynamic `import()` in `src/panel/form.js`'s `annotate()` (it is only needed once someone clicks the pen). Record the final number in the pull request description.
 
 - [ ] 10. Create `types/index.d.ts`:
 
@@ -7314,8 +7349,8 @@ and point `package.json`'s export at it:
 # feedback-client
 
 The in-app "report an issue or suggestion" panel for the amikob dashboards. It captures what
-happened in the page — console, errors, network, a click trail, a session replay, a screenshot and
-a snapshot of the DOM — and posts it to [`feedback-hub`](https://github.com/amikob-inc/feedback-hub),
+happened in the page — console, errors, network, a click trail, a session replay and a screenshot —
+and posts it to [`feedback-hub`](https://github.com/amikob-inc/feedback-hub),
 which files it, answers it, or turns it into a pull request. Framework-free, no build step, MIT.
 
 ## Install
@@ -7388,11 +7423,16 @@ and dark defaults. Map your own tokens onto the host element from your own style
 
 ## Privacy
 
-Passwords are always masked in the replay, the DOM snapshot and the click trail. `maskAllInputs:
-true` masks every typed value in all three. `blank: [".sku-price"]` blanks matching elements in the
-replay and the snapshot. Request headers, cookies and query strings are never captured. The
+Passwords are always masked in the replay and the click trail. `maskAllInputs: true` masks every
+typed value in both. `blank: [".sku-price"]` blanks matching elements in the replay
+(rrweb's `blockSelector`). Request headers, cookies and query strings are never captured. The
 reporter sees what is attached before sending and can leave the recording out. The only network
 destination is `hubUrl`.
+
+The library sends **no bespoke copy of your page**. It had one until 2026-09-21; three consecutive
+adversarial reviews got sensitive data through it, each through a different hiding place, so it was
+removed rather than hardened again. What a page looked like comes from the screenshot and from the
+replay's own first event, a masked snapshot taken by rrweb.
 
 ## Develop
 
@@ -7436,8 +7476,9 @@ First release, Mission 16 piece C1.
 - `mountFeedback(options, deps?)`: the headless API (`open`, `close`, `submit`, `list`, `reply`,
   `retry`, `destroy`) and the built-in Shadow-DOM panel that uses it.
 - Capture: console (200 entries, 1 KB each), errors (20), network (50 failed or slow, query
-  strings stripped), breadcrumbs (100), rrweb replay (two 60-second segments), a screenshot and a
-  masked DOM snapshot.
+  strings stripped), breadcrumbs (100), rrweb replay (two 60-second segments) and a screenshot.
+  No bespoke copy of the page: one was built and withdrawn before release (2026-09-21), because
+  three adversarial reviews got sensitive data past its sanitiser.
 - One multipart bundle to `POST /v1/reports` with every cap the hub enforces, and a friendly
   message for each way it can be refused.
 - "My reports": every status the hub can produce, the AI's answers and questions, replies, Retry,

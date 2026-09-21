@@ -151,6 +151,19 @@ flowchart TB
 
 ### 5.3 The bundle
 
+> **Superseded, 2026-09-21 — the `dom` part is no longer sent.** The client library built the page
+> copy described in the `dom` row below and then removed it: three consecutive adversarial reviews
+> got sensitive data past its sanitiser, each through a different hiding place, with masking on and
+> the sensitive elements explicitly named for blanking. The method was the cause, not the three
+> bugs — it copied everything and deleted what looked dangerous, a denylist over a format with no
+> fixed inventory of hiding places. The owner chose the safest option: no bespoke page copy at all,
+> and no substitute (rrweb's own masked snapshot stays inside the replay rather than becoming a
+> part of its own). The hub still accepts a `dom` part — it was always optional — and simply never
+> receives one. Recorded in `docs/superpowers/plans/2026-09-21-mission-16-client-library.md` (the
+> note at the top) and in the three reviews under
+> `.superpowers/sdd/2026-09-21-mission-16-client-library/` (`review-5.md`, `re-review-5.md`,
+> `re-review-5b.md`). This section is left as written, as the historical design.
+
 `POST /v1/reports` is `multipart/form-data`:
 
 | Part | Type | Cap |
@@ -229,6 +242,12 @@ All functions are called lazily, at open or submit, so the order of module evalu
 The panel's stylesheet uses a dozen custom properties with defaults for light and dark (`--fbh-bg`, `--fbh-panel`, `--fbh-text`, `--fbh-muted`, `--fbh-hairline`, `--fbh-border`, `--fbh-accent`, `--fbh-accent-on`, `--fbh-danger`, `--fbh-success`, `--fbh-tag-bg`, `--fbh-tag-text`, `--fbh-font`). `theme()` sets `data-theme` on the host; an app maps its own tokens on the host element in its stylesheet, for cad-dashboard `#fbh-host { --fbh-bg: var(--bg); --fbh-text: var(--text); … }` in `src/styles/cad.css` next to the existing dark block. Both themes are part of the smoke walk.
 
 ### 5.7 Privacy defaults (D9)
+
+> **Superseded, 2026-09-21 — every mention of the DOM snapshot below is withdrawn.** The bespoke
+> page copy was removed from the client library (see the note at §5.3 for why). `maskAllInputs` and
+> `blank` remain, and now apply to the replay (rrweb's `maskAllInputs` and `blockSelector`) and the
+> breadcrumbs alone. The decision is recorded at the top of
+> `docs/superpowers/plans/2026-09-21-mission-16-client-library.md`.
 
 Passwords are always masked in the replay, the DOM snapshot and the breadcrumbs. `maskAllInputs: true` masks every typed value in all three. `blank: [".sku-price"]` blanks matching elements in the replay (`blockSelector`) and the DOM snapshot. Request headers, cookies and query strings are never captured; the console buffer records what the app itself prints. The reporter sees what is attached before sending and can leave the recording out. The library adds no third-party network calls: the only destination is `hubUrl`.
 
