@@ -18,20 +18,58 @@ function detach(label, buffer) {
   try {
     buffer.uninstall();
   } catch (err) {
-    warnOnce(label, err);
+    // A label of its own, not the one the buffer uses for its runtime warnings: warnOnce fires
+    // once per label ever, so sharing them would let an unrelated earlier warning swallow the
+    // report that a buffer could not be taken off at all.
+    warnOnce(`${label} uninstall`, err);
+  }
+}
+
+// Installing has the same failure mode as uninstalling, and it is the worse one. Unguarded, a
+// throw from the third of four buffers escapes, no handle is returned, and the two that did
+// install stay patched into the page with nothing left holding a reference to undo them — the
+// app keeps a wrapped console and a wrapped fetch for the life of the document. So each install
+// is attempted on its own and a failure is reported and skipped rather than propagated: the
+// handle still comes back, `installed` still names every buffer that really attached, and
+// `uninstall()` can therefore take all of them off. A buffer that fails to install is simply
+// absent — its entries are empty and the rest of the library carries on, because a report
+// missing its network lines is worth far more than no report at all.
+function attach(label, install, installed) {
+  try {
+    const buffer = install();
+    installed.push([label, buffer]);
+    return buffer;
+  } catch (err) {
+    warnOnce(`${label} install`, err);
+    return none;
   }
 }
 
 export function installBuffers({ win = window, doc = win.document, capture = {} } = {}) {
+  const installed = [];
   const consoleBuffer =
-    capture.console === false ? none : installConsoleBuffer({ console: win.console || console });
-  const errorBuffer = installErrorBuffer({ target: win });
-  const networkBuffer = capture.network === false ? none : installNetworkBuffer({ target: win });
-  const breadcrumbBuffer = installBreadcrumbBuffer({
-    target: win,
-    doc,
-    maskAllInputs: !!capture.maskAllInputs,
-  });
+    capture.console === false
+      ? none
+      : attach(
+          "console buffer",
+          () => installConsoleBuffer({ console: win.console || console }),
+          installed,
+        );
+  const errorBuffer = attach("error buffer", () => installErrorBuffer({ target: win }), installed);
+  const networkBuffer =
+    capture.network === false
+      ? none
+      : attach("network buffer", () => installNetworkBuffer({ target: win }), installed);
+  const breadcrumbBuffer = attach(
+    "breadcrumb buffer",
+    () =>
+      installBreadcrumbBuffer({
+        target: win,
+        doc,
+        maskAllInputs: !!capture.maskAllInputs,
+      }),
+    installed,
+  );
 
   return {
     console: () => consoleBuffer.entries(),
@@ -39,10 +77,12 @@ export function installBuffers({ win = window, doc = win.document, capture = {} 
     network: () => networkBuffer.entries(),
     breadcrumbs: () => breadcrumbBuffer.entries(),
     uninstall() {
-      detach("console buffer", consoleBuffer);
-      detach("error buffer", errorBuffer);
-      detach("network buffer", networkBuffer);
-      detach("breadcrumb buffer", breadcrumbBuffer);
+      // Only what actually installed, and each on its own: a buffer that never attached has
+      // nothing to take off, and one that throws on the way out does not keep the others on.
+      while (installed.length) {
+        const entry = installed.pop();
+        if (entry) detach(entry[0], entry[1]);
+      }
     },
   };
 }

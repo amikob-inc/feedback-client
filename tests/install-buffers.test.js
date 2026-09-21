@@ -70,3 +70,35 @@ describe("installBuffers", () => {
     expect(window.history.pushState).toBe(beforePush);
   });
 });
+
+describe("installBuffers when a buffer cannot install", () => {
+  it("still returns a usable handle, and uninstalls only what attached", () => {
+    // A window that is ordinary in every way except that reading `console` throws, which is what
+    // the console buffer does first. The other three must still install, the handle must still
+    // come back, and uninstall must still take off exactly what went on.
+    const hostile = Object.create(window, {
+      console: {
+        get() {
+          throw new Error("no console for you");
+        },
+      },
+    });
+
+    // The network buffer patches whatever window object it was handed, so the patch lands on
+    // `hostile` as an own property and `window.fetch` itself never changes.
+    const fetchBefore = hostile.fetch;
+    let buffers;
+    expect(() => {
+      buffers = installBuffers({ win: hostile, doc: document, capture: {} });
+    }).not.toThrow();
+
+    expect(buffers.console()).toEqual([]);
+    window.dispatchEvent(new window.Event("online"));
+    expect(buffers.breadcrumbs().length).toBeGreaterThan(0);
+    expect(hostile.fetch).not.toBe(fetchBefore);
+
+    expect(() => buffers.uninstall()).not.toThrow();
+    expect(hostile.fetch).toBe(fetchBefore);
+    expect(() => buffers.uninstall()).not.toThrow();
+  });
+});
