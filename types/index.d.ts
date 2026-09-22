@@ -22,7 +22,7 @@ export interface CaptureOptions {
   screenshot?: boolean;
   console?: boolean;
   network?: boolean;
-  /** Mask every typed value, not only passwords, in the replay and the click trail. */
+  /** Mask every typed value, not only passwords, in the replay, the click trail and the screenshot. */
   maskAllInputs?: boolean;
   /** CSS selectors for what must never be captured, in any of the three. */
   blank?: string[];

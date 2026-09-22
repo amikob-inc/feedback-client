@@ -759,6 +759,65 @@ export function screenshotPositions() {
       where: "a password field's value, in ordinary page content",
       plant: typedValue("password"),
     }),
+    // The other kinds of field a browser paints a value into, each masked by the recording under
+    // maskAllInputs and, since 2026-09-22, by the picture as well.
+    position({
+      id: "screenshot/textarea/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "input-value",
+      where: "a textarea's text, in ordinary page content",
+      plant: (ctx) => {
+        // Child text, the server-rendered shape and what a browser paints: a `value` attribute
+        // on a textarea paints nothing, so a position planted that way would be satisfied by
+        // markup the picture never shows.
+        const el = ctx.doc.createElement("textarea");
+        el.appendChild(ctx.doc.createTextNode(ctx.marker));
+        // A decoy live value: modern-screenshot copies the live value onto the clone as a
+        // `value` attribute (unpainted), so with the marker only in the child text a control run
+        // is satisfied by what the picture paints and by nothing else.
+        el.value = "not the marker";
+        ctx.parent.appendChild(el);
+      },
+    }),
+    position({
+      id: "screenshot/select/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "input-value",
+      where: "a select's chosen option, in ordinary page content",
+      // The picture only: the recording keeps a select's option list as page content and masks
+      // the select's value alone (fates.js says why), so this claim is about what is painted.
+      parts: ["screenshot"],
+      plant: (ctx) => {
+        // Two options, the marker only on the chosen one's text — what a browser paints — and
+        // not on the select's own `value`, which paints nothing.
+        const el = ctx.doc.createElement("select");
+        const other = ctx.doc.createElement("option");
+        other.value = "other";
+        other.textContent = "Other";
+        const chosen = ctx.doc.createElement("option");
+        chosen.value = "chosen";
+        chosen.textContent = ctx.marker;
+        el.appendChild(other);
+        el.appendChild(chosen);
+        el.value = "chosen";
+        ctx.parent.appendChild(el);
+      },
+    }),
+    position({
+      id: "screenshot/editable/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "editable-text",
+      where: "text typed into a contenteditable region, in ordinary page content",
+      plant: (ctx) => {
+        const el = ctx.doc.createElement("div");
+        el.setAttribute("contenteditable", "true");
+        el.textContent = ctx.marker;
+        ctx.parent.appendChild(el);
+      },
+    }),
   ];
 }
 

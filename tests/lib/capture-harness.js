@@ -507,7 +507,12 @@ export function scan({ parts, registry, settings }) {
     const fate = expectedFate(position, settings);
     const needle = marker.toLowerCase();
     const hits = [];
-    for (const { part, lower } of haystacks) {
+    // A position may say which parts it is a claim about (`parts`, see the select position in
+    // markers.js and the note in fates.js); every other position is searched in every part.
+    const relevant = position.parts
+      ? haystacks.filter((one) => position.parts.includes(one.part.name))
+      : haystacks;
+    for (const { part, lower } of relevant) {
       let at = lower.indexOf(needle);
       while (at !== -1) {
         hits.push({ part: part.name, at, context: contextAt(part.text, at, marker.length) });
