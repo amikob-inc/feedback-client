@@ -22,7 +22,7 @@ First release, Mission 16 piece C1.
   `blank` selectors now apply to the screenshot as pixels and inside same-origin child frames,
   both confirmed in a real browser.
 - Hand-written TypeScript declarations (`types/index.d.ts`), checked against the real exports.
-- Size: 11.2 KB gzipped on page load against a 15 KB budget; the panel is another 9.5 KB fetched
+- Size: 11.3 KB gzipped on page load against a 15 KB budget; the panel is another 9.5 KB fetched
   on the first open. See the README's "Size".
 
 Fixed before release, by the browser run that the jsdom tests could not do (`e2e/panel.spec.js`):

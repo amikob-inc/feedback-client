@@ -128,7 +128,7 @@ replay's own first event, a masked snapshot taken by rrweb.
 
 The budget is what a dashboard downloads for this library on a page load: under **15 KB
 gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.1.0 is
-**11.2 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
+**11.3 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
 it). The panel — its markup, its list and its stylesheet, another 9.5 KB — is a chunk of its own,
 fetched the first time `open()` is called, which is why `open()` returns a promise. The two
 dependencies are chunks of their own too: the recorder is fetched on the first idle moment after

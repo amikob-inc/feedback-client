@@ -104,7 +104,11 @@ describe("mountFeedback with no hub", () => {
     const handle = mountFeedback({ app: "cad", button: "#b" });
     expect(document.getElementById("b").hidden).toBe(true);
     expect(await handle.list()).toEqual({ items: [], nextCursor: null });
-    expect(() => handle.open()).not.toThrow();
+    // The same contract as the live handle: a promise, resolved, so an app that chains on
+    // open() is not broken by the off switch.
+    const opening = handle.open();
+    expect(opening).toBeInstanceOf(Promise);
+    await expect(opening).resolves.toBeUndefined();
     handle.destroy();
   });
 
@@ -266,12 +270,13 @@ describe("replayReady (the panel's honest answer about the recording)", () => {
         return { open() {}, close() {}, destroy() {} };
       },
     });
-    handle.open(); // ensurePanel() only builds the panel, and its api, once open() is called
-    return { handle, transport, api: () => capturedApi };
+    // ensurePanel() only builds the panel, and its api, once open() is called.
+    const opened = handle.open().then(() => ({ handle, transport, api: () => capturedApi }));
+    return opened;
   }
 
   it("resolves false with no recorder at all when capture.replay is off", async () => {
-    const { handle, api } = mountWithPanel({ capture: { replay: false, screenshot: false } });
+    const { handle, api } = await mountWithPanel({ capture: { replay: false, screenshot: false } });
     await expect(api().replayReady).resolves.toBe(false);
     handle.destroy();
   });
@@ -283,7 +288,7 @@ describe("replayReady (the panel's honest answer about the recording)", () => {
         return () => {};
       },
     });
-    const { handle, api } = mountWithPanel(
+    const { handle, api } = await mountWithPanel(
       { capture: { replay: true, screenshot: false } },
       { loadRecorder, schedule: run },
     );
@@ -297,7 +302,7 @@ describe("replayReady (the panel's honest answer about the recording)", () => {
     const loadRecorder = async () => {
       throw new Error("blocked");
     };
-    const { handle, api } = mountWithPanel(
+    const { handle, api } = await mountWithPanel(
       { capture: { replay: true, screenshot: false } },
       { loadRecorder, schedule: run },
     );

@@ -81,7 +81,9 @@ export function pageContext({ doc, win, options }) {
 function inertHandle() {
   const noop = () => {};
   return {
-    open: noop,
+    // The same shape as the real handle, promise included: `feedback.open().then(...)` in a host
+    // must not become a TypeError the moment the emergency switch (no hubUrl) is thrown.
+    async open() {},
     close: noop,
     async submit() {
       return null;

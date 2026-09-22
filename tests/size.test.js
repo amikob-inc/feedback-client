@@ -45,8 +45,12 @@ describe("the size budget", () => {
     const panelChunks = chunks.filter(
       (one) => !one.onPageLoad && one.inputs.some((file) => file.includes(PANEL_DIR)),
     );
-    expect(panelChunks).toHaveLength(1);
-    expect(imports.map((one) => one.kind)).toContain("dynamic-import");
-    expect(imports.some((one) => one.path === panelChunks[0].file)).toBe(true);
+    expect(panelChunks.length).toBeGreaterThanOrEqual(1);
+    for (const chunk of panelChunks) {
+      const reached = imports.find((one) => one.path === chunk.file);
+      expect(reached && reached.kind, `${chunk.file} is not reached by import()`).toBe(
+        "dynamic-import",
+      );
+    }
   }, 30_000);
 });

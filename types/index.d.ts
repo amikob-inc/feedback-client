@@ -53,6 +53,17 @@ export interface MountOptions {
   capture?: CaptureOptions;
 }
 
+/** What the built-in panel is handed, and what a panel supplied through `MountDeps.createPanel` gets. */
+export interface PanelApi extends FeedbackHandle {
+  /** The reporter has now seen these; they stop counting towards `onSummary`'s attention. */
+  markRead(items: ReportSummary[]): void;
+  /** The automatic screenshot, honouring `capture.blank`; null when it cannot be taken. */
+  captureScreenshot(): Promise<Blob | null>;
+  /** Settles once, to whether a recording is really being made. */
+  replayReady: Promise<boolean>;
+  options: MountOptions;
+}
+
 /** A seam for tests and for an app that brings its own panel. Not part of the options object. */
 export interface MountDeps {
   doc?: Document;
@@ -65,8 +76,8 @@ export interface MountDeps {
   loadScreenshot?: () => Promise<unknown>;
   /** Built the first time open() is called; may return a promise, as the built-in loader does. */
   createPanel?: (context: {
-    api: unknown;
-    options: unknown;
+    api: PanelApi;
+    options: MountOptions;
     doc: Document;
   }) => Panel | Promise<Panel>;
 }
