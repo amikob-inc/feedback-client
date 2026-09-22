@@ -5,10 +5,12 @@ All notable changes to this package. Consumers install a git tag
 
 ## 0.1.1 — 2026-09-22
 
-- `maskAllInputs: true` now masks the automatic screenshot as well: every typed value, a textarea's
-  text, a select's chosen option and editable text — the same kinds the recording masks — are
-  replaced by asterisks of the same length in the clone the picture is drawn from, so the picture
-  cannot show what the recording withholds. It was the one part that showed typed values whatever
+- `maskAllInputs: true` now masks the automatic screenshot as well: every typed value (any input
+  kind but checkbox, radio, submit, button, reset and image — a deny-list, since a browser renders
+  an unrecognised `type` as text), a textarea's text, a select's chosen option and editable text
+  are replaced by asterisks of the same length in the clone the picture is drawn from, so the
+  picture cannot show what the recording withholds; for a select it is stricter than the
+  recording, which keeps the option list and masks only the value. It was the one part that showed typed values whatever
   the setting (the leak harness's one declared gap, now closed; three field kinds join its
   screenshot positions, and a second, unmasked run proves the picture still shows them when asked
   to). A checkbox's state is not a value and stays in both. Page load: 11.6 KB gzipped.

@@ -202,15 +202,30 @@ describe("maskClonedValue", () => {
     expect(el.getAttribute("value")).toBe("Jane");
   });
 
-  it("masks the recording's input kinds and leaves the others alone", () => {
-    for (const type of ["text", "email", "number", "search", "tel", "url", "date"]) {
+  it("masks every input kind that can carry a typed value, whatever its type says", () => {
+    // The standard text-like kinds, the two the recording always masks, and — the case the
+    // allow-list missed — a type a browser does not recognise, which it renders as text.
+    for (const type of [
+      "text",
+      "email",
+      "number",
+      "search",
+      "tel",
+      "url",
+      "date",
+      "hidden",
+      "file",
+      "txt",
+      "quux",
+    ]) {
       const el = make(`<input type="${type}" value="secret">`);
       expect(maskClonedValue(el, true), type).toBe(true);
       expect(el.getAttribute("value"), type).toBe("******");
     }
     const untyped = make('<input value="secret">'); // no type is a text input
     expect(maskClonedValue(untyped, true)).toBe(true);
-    for (const type of ["checkbox", "radio", "submit", "button", "hidden", "file"]) {
+    // The kinds whose value is a label or a state, never something typed.
+    for (const type of ["checkbox", "radio", "submit", "button", "reset", "image"]) {
       const el = make(`<input type="${type}" value="keep">`);
       expect(maskClonedValue(el, true), type).toBe(false);
       expect(el.getAttribute("value"), type).toBe("keep");

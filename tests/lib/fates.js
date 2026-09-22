@@ -93,7 +93,16 @@ const MECHANISMS = [
 // any other, which is what a closed gap looks like here.
 
 // The one gap the first report kept — a field's typed value in the automatic screenshot — closed
-// on 2026-09-22 (plan Q3.1): under maskAllInputs the picture masks what the recording masks.
+// on 2026-09-22 (plan Q3.1): under maskAllInputs the picture masks at least what the recording
+// masks. Three things worth knowing that are not positions:
+//   - A <select>: the picture masks the chosen option's text (what it paints); the recording
+//     keeps the option list as page content and masks only the select's value, so the choice can
+//     be read from the replay (rrweb's design; the full catalogue's select positions declare it
+//     published). The screenshot run's select position therefore says `parts: ["screenshot"]`.
+//   - A <canvas>: the recording leaves it out (recordCanvas is off); the picture copies its
+//     pixels, so text an app draws on a canvas is in the picture under any setting.
+//   - document.designMode = "on" makes a whole document editable with no attribute to select on;
+//     neither the picture nor the recording masks it.
 const GAPS = [];
 
 // --------------------------------------------------------------------------------------------

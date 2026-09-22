@@ -768,8 +768,11 @@ export function screenshotPositions() {
       kind: "input-value",
       where: "a textarea's text, in ordinary page content",
       plant: (ctx) => {
+        // Child text, the server-rendered shape and what a browser paints: a `value` attribute
+        // on a textarea paints nothing, so a position planted that way would be satisfied by
+        // markup the picture never shows.
         const el = ctx.doc.createElement("textarea");
-        el.value = ctx.marker;
+        el.appendChild(ctx.doc.createTextNode(ctx.marker));
         ctx.parent.appendChild(el);
       },
     }),
@@ -779,13 +782,22 @@ export function screenshotPositions() {
       zone: "ordinary",
       kind: "input-value",
       where: "a select's chosen option, in ordinary page content",
+      // The picture only: the recording keeps a select's option list as page content and masks
+      // the select's value alone (fates.js says why), so this claim is about what is painted.
+      parts: ["screenshot"],
       plant: (ctx) => {
+        // Two options, the marker only on the chosen one's text — what a browser paints — and
+        // not on the select's own `value`, which paints nothing.
         const el = ctx.doc.createElement("select");
-        const option = ctx.doc.createElement("option");
-        option.value = ctx.marker;
-        option.textContent = ctx.marker;
-        el.appendChild(option);
-        el.value = ctx.marker;
+        const other = ctx.doc.createElement("option");
+        other.value = "other";
+        other.textContent = "Other";
+        const chosen = ctx.doc.createElement("option");
+        chosen.value = "chosen";
+        chosen.textContent = ctx.marker;
+        el.appendChild(other);
+        el.appendChild(chosen);
+        el.value = "chosen";
         ctx.parent.appendChild(el);
       },
     }),

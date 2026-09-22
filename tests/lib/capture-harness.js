@@ -507,15 +507,11 @@ export function scan({ parts, registry, settings }) {
     const fate = expectedFate(position, settings);
     const needle = marker.toLowerCase();
     const hits = [];
-    // A position in the `screenshot` group is a claim about the picture (markers.js: it belongs
-    // there only when a browser would paint it), so it is judged on the screenshot part alone.
-    // The recording has its own catalogue and its own rules, and they differ for good reason: a
-    // select's option list is page content to the recording, which masks only the choice, while
-    // the picture paints the chosen option's text and must mask it.
-    const relevant =
-      position.group === "screenshot"
-        ? haystacks.filter((one) => one.part.name === "screenshot")
-        : haystacks;
+    // A position may say which parts it is a claim about (`parts`, see the select position in
+    // markers.js and the note in fates.js); every other position is searched in every part.
+    const relevant = position.parts
+      ? haystacks.filter((one) => position.parts.includes(one.part.name))
+      : haystacks;
     for (const { part, lower } of relevant) {
       let at = lower.indexOf(needle);
       while (at !== -1) {
