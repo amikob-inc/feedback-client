@@ -131,10 +131,10 @@ export function maskInputOptionsFor(maskAllInputs) {
 
 // Every URL a serialised node can carry. rrweb absolutises each of them against the document and
 // writes it whole, so a token in a query string or a session in a fragment travels in an anchor
-// exactly as it travels in the Meta event — and this library applies one rule (src/url.js) in
-// every other place a URL is written down (`pageContext`, the Meta event, every network entry,
-// the route breadcrumb). An anchor back to the current page carries the same token, so it gets
-// the same treatment. The cost is a replay whose signed or cache-busted image URLs no longer
+// exactly as it travels in the Meta event — and this library applies the same rule (src/url.js)
+// wherever else a page URL is written down (`pageContext`, the Meta event, the route breadcrumb;
+// the network buffer's own `scrubUrl` is stricter still and keeps origin and path only). An
+// anchor back to the current page carries the same token, so it gets the same treatment. The cost is a replay whose signed or cache-busted image URLs no longer
 // resolve — a broken image rather than a live credential, which is the right way round.
 export const URL_ATTRIBUTES = [
   "href",
@@ -219,7 +219,8 @@ export function scrubAttributes(tagName, attributes, maskInputOptions = {}) {
     const value = attributes[name];
     // A query string, or a fragment that could be carrying parameters (`#access_token=…`).
     if (typeof value !== "string" || !(value.includes("?") || value.includes("#"))) continue;
-    set(name, name === "srcset" ? scrubSrcset(value) : scrubHref(value));
+    const next = name === "srcset" ? scrubSrcset(value) : scrubHref(value);
+    if (next !== value) set(name, next);
   }
   return out || attributes;
 }

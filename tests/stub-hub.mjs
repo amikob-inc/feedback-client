@@ -261,8 +261,8 @@ async function handle(req, res) {
 // a host without IPv6 simply serves the IPv4 socket.
 createServer(handle)
   .on("error", (err) => {
-    // Without this an EADDRINUSE crashes the process silently and Playwright waits out its whole
-    // webServer timeout before saying anything; with it the cause is the first line printed.
+    // An unhandled EADDRINUSE would also exit, with a stack trace; this says what happened in
+    // one line and keeps the exit, since a stub bound on one socket only must not serve.
     console.error(`stub hub could not listen on ${PORT}: ${err.message}`);
     process.exit(1);
   })
@@ -270,5 +270,8 @@ createServer(handle)
     console.log(`stub hub on http://localhost:${PORT} (demo at /demo/index.html)`);
   });
 createServer(handle)
-  .on("error", () => {})
+  // Best effort, so no exit — but said out loud: `localhost` resolves to `::1` first on a
+  // dual-stack host, so a stale process holding this socket would serve the page while the
+  // IPv4 stub answers the hub calls, which looks healthy and is not.
+  .on("error", (err) => console.error(`stub hub: no IPv6 socket (${err.message})`))
   .listen(PORT, "::1");

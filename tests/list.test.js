@@ -407,6 +407,22 @@ describe("createList", () => {
     list.destroy();
   });
 
+  it("does not rewrite a repeated failure's message on every poll", async () => {
+    const { list } = setup({
+      list: async () => {
+        throw new Error("Your session expired; sign in again.");
+      },
+    });
+    await list.refresh();
+    const empty = document.querySelector(".fbh-empty");
+    expect(empty.textContent).toBe("Your session expired; sign in again.");
+    const node = empty.firstChild;
+    await list.refresh();
+    await list.refresh();
+    expect(empty.firstChild).toBe(node);
+    list.destroy();
+  });
+
   it("shows why the list could not be fetched", async () => {
     const { list } = setup({
       list: async () => {

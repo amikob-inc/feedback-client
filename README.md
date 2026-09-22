@@ -112,8 +112,8 @@ a value typed into an ordinary field is in it, `maskAllInputs` or not. Request h
 and query strings are never captured, and neither is a URL fragment that carries parameters
 (`#access_token=…`, where supabase-js's implicit flow lands a session); a plain route fragment
 (`#batch-12`) is kept. The rule is the shape, not a list of names, so a hash router's route with
-parameters (`#/orders?page=2`) is dropped whole as well. The reporter sees what is attached before sending and can leave the
-recording out. The only network destination is `hubUrl`.
+parameters (`#/orders?page=2`) is dropped whole as well. The reporter sees what is attached
+before sending and can leave the recording out. The only network destination is `hubUrl`.
 
 Same-origin `<iframe>`s are part of the recording, and the same masking and the same `blank`
 selectors apply inside them. An `<iframe srcdoc>`'s attribute is withheld whole, because it can

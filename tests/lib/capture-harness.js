@@ -98,7 +98,7 @@ function plantInto(root, positions, mint) {
 // The channels: markers that reach the bundle through a buffer rather than through serialisation.
 // The elements go into the page here and the interactions that feed the buffers run after the
 // recorder has taken its first snapshot, which is the order a real session has.
-function plantChannels(root, by) {
+function plantChannels(root, by, metaHref) {
   const blanked = document.createElement("div");
   blanked.className = BLANK_CLASS;
   blanked.setAttribute("data-pos", "channels/blanked");
@@ -168,16 +168,19 @@ function plantChannels(root, by) {
   ordinary.appendChild(outsideField);
 
   document.title = `Rings — ${by.get("document-title")}`;
-  // The page the recorder starts on, so the marker is in the Meta event's href: a recovery
-  // landing page — the session in the fragment and no query string at all. Deliberately not the
-  // query-string position: with a `?` beside it a scrubber gated on `?` alone would have looked
-  // right. The query-string position joins the location later, in runInteractions(), where the
-  // page context reads it at submit; the Meta event's query case is a unit test in
-  // tests/replay.test.js.
+  // The page the recorder starts on, so its URL is what the Meta event's href carries. rrweb
+  // writes that event once at record start, so one run can test one shape, and the shape is the
+  // caller's choice: a recovery landing page — the session in the fragment and no query string
+  // at all — or a page reached with a token in the query and no fragment. Never both on one
+  // URL: with a `?` beside the fragment a scrubber gated on `?` alone looks right, and the other
+  // way round likewise. The position the start URL does not carry joins the location later, in
+  // runInteractions(), where the page context reads both at submit.
   window.history.replaceState(
     {},
     "",
-    `/rings#access_token=${by.get("location-hash-params")}&type=recovery`,
+    metaHref === "query"
+      ? `/rings?token=${by.get("location-query")}`
+      : `/rings#access_token=${by.get("location-hash-params")}&type=recovery`,
   );
 
   return {
@@ -279,6 +282,9 @@ export async function runCapture({
   positions = buildPositions(),
   nonce = randomNonce(),
   interact = true,
+  // Which shape the page the recorder starts on has: "fragment" (a recovery landing page) or
+  // "query" (a token in the query string). See plantChannels().
+  metaHref = "fragment",
 } = {}) {
   installBlobPolyfill();
   if (settings.screenshot) installScreenshotStubs();
@@ -304,7 +310,7 @@ export async function runCapture({
   // A caller can pass a short position list with no channels in it (the self-test does), and then
   // there is nothing to plant and nothing to interact with. The reporter's own fields still have
   // to be filled with something, so they fall back to plain text that carries no marker.
-  const channels = by.size ? plantChannels(root, by) : null;
+  const channels = by.size ? plantChannels(root, by, metaHref) : null;
   const reporterName = by.get("reporter-name") || "Dana";
   const sectionName = by.get("section-name") || "General";
   const reporterText = by.get("reporter-text") || "the price column is wrong";

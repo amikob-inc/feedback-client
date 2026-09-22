@@ -49,6 +49,13 @@ const COMBINATIONS = {
   "typo-in-blank": { ...DEFAULT_SETTINGS, blank: [BLANK_SELECTOR, "div:has-bad((("] },
 };
 
+// The URL the recorder starts on, per combination. rrweb's Meta event carries that URL once, at
+// record start, so a run can only ever test one shape of it: the session-in-the-fragment shape of
+// a recovery landing page, or a token in the query string. Two combinations start on the query
+// shape so a scrubber gated on `#` alone goes red as surely as one gated on `?` alone (the rest
+// start on the fragment, the shape that escaped a `?`-only gate once).
+const META_HREF = { defaults: "query", "blank-without-mask": "query" };
+
 const runs = {};
 // Runs with a position list of their own, kept out of `runs` so the rules below — which hold for
 // every combination of the full catalogue — are not asked about a page that never had one.
@@ -56,7 +63,7 @@ const extraRuns = {};
 
 beforeAll(async () => {
   for (const [name, settings] of Object.entries(COMBINATIONS)) {
-    runs[name] = scan(await runCapture({ settings, positions }));
+    runs[name] = scan(await runCapture({ settings, positions, metaHref: META_HREF[name] }));
   }
 }, 180000);
 

@@ -23,7 +23,8 @@ export function routePath(location) {
 
 // The same rule applied to a whole href. An href with nothing to remove comes back exactly as it
 // was — `new URL()` would otherwise re-serialise it, and a `data:` image with a raw `#` in its
-// SVG is a broken image once percent-encoded. Never throws: an href this cannot parse is cut by
+// SVG (and no `=` after it, or the fragment rule takes it anyway) is a broken image once
+// percent-encoded. Never throws: an href this cannot parse is cut by
 // hand rather than passed through, because passing it through is the failure that matters.
 export function scrubHref(href) {
   const text = typeof href === "string" ? href : "";

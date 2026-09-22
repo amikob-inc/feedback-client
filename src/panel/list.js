@@ -413,7 +413,10 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     } catch (err) {
       if (!items.length) {
         empty.hidden = false;
-        empty.textContent = err && err.message ? err.message : "Couldn't send, retry.";
+        // The same live region as the placeholder, on the path that repeats: a session that has
+        // expired fails every poll with the same words, which must not be read out every poll.
+        const message = err && err.message ? err.message : "Couldn't send, retry.";
+        if (empty.textContent !== message) empty.textContent = message;
       }
     }
   }

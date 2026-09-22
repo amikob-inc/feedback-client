@@ -15,7 +15,7 @@ First release, Mission 16 piece C1.
   — the page context, the route breadcrumb, a network entry, the replay's Meta href and every
   URL attribute in it — the query string goes, and so does a fragment that carries parameters
   (`#access_token=…`, where supabase-js's implicit flow lands a session); a route fragment
-  (`#batch-12`) stays.
+  (`#batch-12`) stays, a hash router's route with parameters (`#/orders?page=2`) goes.
   No bespoke copy of the page: one was built and withdrawn before release (2026-09-21), because
   three adversarial reviews got sensitive data past its sanitiser.
 - One multipart bundle to `POST /v1/reports` with every cap the hub enforces, and a friendly

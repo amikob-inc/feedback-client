@@ -42,7 +42,8 @@ export interface MountOptions {
   app: string;
   env?: string;
   version?: string;
-  getToken: () => Promise<string | null>;
+  /** Required when `hubUrl` is set; with the feature off nothing is ever called. */
+  getToken?: () => Promise<string | null>;
   user?: () => Reporter | null;
   section?: () => string;
   sections?: string[];
