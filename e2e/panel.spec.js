@@ -679,10 +679,10 @@ test("never breaks the host application, even one whose every hook throws", asyn
 });
 
 test.describe("with the real recorder and the real screenshot", () => {
-  test("fetches each of the two only when it is needed", async ({ page }) => {
+  test("fetches each of the three only when it is needed", async ({ page }) => {
     const seen = new Set();
     page.on("request", (request) => seen.add(new URL(request.url()).pathname));
-    const { recorder, screenshot } = chunks();
+    const { recorder, screenshot, panel } = chunks();
 
     // A page with the recording switched off, left alone. The window has to be long enough for a
     // fetch to have happened if one were going to: the same window is shown to be long enough by
@@ -692,11 +692,13 @@ test.describe("with the real recorder and the real screenshot", () => {
     // same idle callback the recorder would have been fetched on.
     await expect(page.locator("#dot")).not.toHaveText("0");
     await page.waitForTimeout(1500);
-    expect([...seen].filter((one) => one === recorder || one === screenshot)).toEqual([]);
+    expect([...seen].filter((one) => [recorder, screenshot, panel].includes(one))).toEqual([]);
 
-    // Opening the panel takes a screenshot, and only then is that module worth fetching.
+    // Opening the panel fetches the panel itself — the size budget is kept by not downloading it
+    // until now — and takes a screenshot, so only then is that module worth fetching either.
     await page.click("#open-feedback");
     await expect(page.locator(".fbh-thumb figcaption").first()).toHaveText("Screenshot");
+    expect(seen.has(panel)).toBe(true);
     expect(seen.has(screenshot)).toBe(true);
     expect(seen.has(recorder)).toBe(false);
 
@@ -709,6 +711,7 @@ test.describe("with the real recorder and the real screenshot", () => {
     await page.waitForTimeout(1500);
     expect(seen.has(recorder)).toBe(true);
     expect(seen.has(screenshot)).toBe(false);
+    expect(seen.has(panel)).toBe(false);
   });
 
   test("sends a screenshot with the blanked region blank, as pixels", async ({ page }) => {

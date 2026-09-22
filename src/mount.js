@@ -9,14 +9,20 @@ import { gzip } from "./capture/gzip.js";
 import { idle, serializeReplay, startReplay } from "./capture/replay.js";
 import { captureScreenshot } from "./capture/screenshot.js";
 import { defaultSection, normalizeOptions } from "./options.js";
-import { createPanel } from "./panel/panel.js";
 import { attentionIds, markSeen, readSeen, safeStorage, seenKey, writeSeen } from "./seen.js";
 import { FeedbackError, createTransport } from "./transport.js";
 import { warnOnce } from "./warn.js";
 
 // An app that wants its own UI passes `deps.createPanel` (spec §5.4, "Headless use"); everyone
-// else gets the built-in panel.
-const defaultPanelFactory = createPanel;
+// else gets the built-in panel — fetched the first time open() is called, never before. The panel
+// (its markup, its list, its stylesheet) is about half of this library, and a dashboard loads the
+// library on every page while opening the panel rarely, so the panel's chunk is what keeps the
+// page-load cost under the size budget (README, "Size"). `import()` of a relative module is what
+// a bundler turns into a chunk of its own, exactly as it does for the recorder and the screenshot.
+async function loadDefaultPanel(context) {
+  const { createPanel } = await import("./panel/panel.js");
+  return createPanel(context);
+}
 
 // Standing rule 1: none of the app's own hooks (getToken is guarded inside transport.js instead,
 // since it is only ever called from there) may take the app down. Every call site below goes
@@ -265,23 +271,52 @@ export function mountFeedback(rawOptions, deps = {}) {
     return transport.retry(id);
   }
 
+  // One load at a time: a reporter who clicks twice while the chunk is on its way must get one
+  // panel, not two hosts on the page each polling the hub. A load that fails is forgotten rather
+  // than cached, so the next open() tries the network again.
+  let loading = null;
+  // Whether the most recent request was open() or close(): decided when the panel finally
+  // arrives, because a close() (or a destroy()) can land while it is still on its way, and a
+  // panel that pops up after the reporter dismissed it is worse than none.
+  let wantOpen = false;
+
   function ensurePanel() {
-    if (panel || destroyed) return panel;
-    const factory = deps.createPanel || defaultPanelFactory;
-    if (!factory) {
-      warnOnce("panel", new Error("this build was mounted headless: open() has no panel to show"));
-      return null;
-    }
-    panel = factory({ api: internal, options, doc });
-    return panel;
+    if (panel || destroyed) return Promise.resolve(panel);
+    if (loading) return loading;
+    const factory = deps.createPanel || loadDefaultPanel;
+    loading = (async () => {
+      try {
+        const built = await factory({ api: internal, options, doc });
+        // destroy() ran while the chunk was loading: what arrived is never attached to the page.
+        if (destroyed) {
+          if (built && typeof built.destroy === "function") built.destroy();
+          return null;
+        }
+        panel = built;
+        return panel;
+      } catch (err) {
+        // Offline, a chunk gone after a release, a blocked script: the library may never throw
+        // into the host's click handler, so this is a warning and a resolved promise. The app's
+        // own stale-chunk handling still sees the failed import; the library does not hide it.
+        warnOnce("panel", err);
+        return null;
+      } finally {
+        loading = null;
+      }
+    })();
+    return loading;
   }
 
-  function open() {
-    const current = ensurePanel();
-    if (current) current.open();
+  // Resolves once the panel is showing, or once it is known that it will not be (the feature
+  // was destroyed, or the panel could not be loaded). It never rejects.
+  async function open() {
+    wantOpen = true;
+    const current = await ensurePanel();
+    if (current && wantOpen) current.open();
   }
 
   function close() {
+    wantOpen = false;
     if (panel) panel.close();
   }
 
@@ -297,6 +332,7 @@ export function mountFeedback(rawOptions, deps = {}) {
     // calling destroy() a second time, or before open() was ever used, costs nothing and leaves
     // nothing extra behind.
     destroyed = true;
+    wantOpen = false;
     if (button) button.removeEventListener("click", onButtonClick);
     if (panel) panel.destroy();
     panel = null;

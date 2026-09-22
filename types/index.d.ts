@@ -63,11 +63,18 @@ export interface MountDeps {
   schedule?: (fn: () => void) => void;
   loadRecorder?: () => Promise<unknown>;
   loadScreenshot?: () => Promise<unknown>;
-  createPanel?: (context: { api: unknown; options: unknown; doc: Document }) => {
-    open(): void;
-    close(): void;
-    destroy(): void;
-  };
+  /** Built the first time open() is called; may return a promise, as the built-in loader does. */
+  createPanel?: (context: {
+    api: unknown;
+    options: unknown;
+    doc: Document;
+  }) => Panel | Promise<Panel>;
+}
+
+export interface Panel {
+  open(): void;
+  close(): void;
+  destroy(): void;
 }
 
 export interface ReportFields {
@@ -112,7 +119,12 @@ export interface ReportSummary {
 }
 
 export interface FeedbackHandle {
-  open(): void;
+  /**
+   * Shows the panel. It is loaded on demand, so this resolves once the panel is on the page — a
+   * caller that inspects the DOM right after calling it sees nothing yet. It never rejects: if
+   * the panel cannot be loaded the library warns once and resolves anyway.
+   */
+  open(): Promise<void>;
   close(): void;
   /** Resolves to null when the feature is off (no hubUrl). */
   submit(fields: ReportFields): Promise<{ id: string; dropped: string[] } | null>;

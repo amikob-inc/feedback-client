@@ -409,29 +409,141 @@ describe("destroy", () => {
   });
 });
 
+// open() loads the panel on demand — src/panel/panel.js is about half the library and is only
+// needed once somebody opens it — so open() returns a promise that settles once the panel is
+// showing. A page load pays for the capture half only; the first open() pays for the panel.
 describe("open", () => {
-  it("shows the built-in panel and takes it away again on destroy", () => {
-    const { handle } = mount();
-    handle.open();
+  function hostOverlay() {
     const host = document.getElementById("fbh-host");
-    expect(host).not.toBe(null);
-    expect(host.shadowRoot.querySelector(".fbh-overlay").hidden).toBe(false);
+    return host && host.shadowRoot.querySelector(".fbh-overlay");
+  }
+
+  it("shows the built-in panel once its promise settles, and takes it away again on destroy", async () => {
+    const { handle } = mount();
+    const opening = handle.open();
+    expect(opening).toBeInstanceOf(Promise);
+    await opening;
+    expect(hostOverlay().hidden).toBe(false);
     handle.close();
-    expect(host.shadowRoot.querySelector(".fbh-overlay").hidden).toBe(true);
+    expect(hostOverlay().hidden).toBe(true);
     handle.destroy();
     expect(document.getElementById("fbh-host")).toBe(null);
   });
 
-  it("opens from the app's own button", () => {
+  it("opens from the app's own button", async () => {
     document.body.innerHTML = `<button id="topbar-issues"></button>`;
     const { handle } = mount({ button: "#topbar-issues" });
     expect(document.getElementById("topbar-issues").hidden).toBe(false);
     document
       .getElementById("topbar-issues")
       .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(
-      document.getElementById("fbh-host").shadowRoot.querySelector(".fbh-overlay").hidden,
-    ).toBe(false);
+    await vi.waitFor(() => expect(hostOverlay().hidden).toBe(false));
     handle.destroy();
+  });
+
+  // The panel arrives on a network round trip in production, and a reporter can click twice
+  // in that time. Two loads in flight would mean two hosts on the page and two lists polling.
+  it("builds one panel however many times open() is called while it is still loading", async () => {
+    let built = 0;
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    const { handle } = mount(
+      {},
+      {
+        createPanel: async () => {
+          built += 1;
+          await gate;
+          return { open() {}, close() {}, destroy() {} };
+        },
+      },
+    );
+    const first = handle.open();
+    const second = handle.open();
+    release();
+    await Promise.all([first, second]);
+    expect(built).toBe(1);
+    await handle.open();
+    expect(built).toBe(1);
+    handle.destroy();
+  });
+
+  it("does not show a panel that arrives after close() was called", async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    const shown = vi.fn();
+    const { handle } = mount(
+      {},
+      {
+        createPanel: async () => {
+          await gate;
+          return { open: shown, close() {}, destroy() {} };
+        },
+      },
+    );
+    const opening = handle.open();
+    handle.close();
+    release();
+    await opening;
+    expect(shown).not.toHaveBeenCalled();
+    // A later open() is a fresh request and does show it.
+    await handle.open();
+    expect(shown).toHaveBeenCalledTimes(1);
+    handle.destroy();
+  });
+
+  it("leaves nothing behind when destroy() runs before the panel has arrived", async () => {
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    const { handle } = mount(
+      {},
+      {
+        createPanel: async () => {
+          await gate;
+          const { createPanel } = await import("../src/panel/panel.js");
+          return createPanel({ api: {}, options: {}, doc: document });
+        },
+      },
+    );
+    const opening = handle.open();
+    handle.destroy();
+    release();
+    await opening;
+    expect(document.getElementById("fbh-host")).toBe(null);
+  });
+
+  // The library may never break the host: a chunk that cannot be fetched (offline, a stale
+  // deployment) is a warning and a resolved promise, not a rejection thrown into the app's click
+  // handler. And it is tried again next time, since the network may be back.
+  it("warns once and resolves when the panel cannot be loaded, then tries again on the next open()", async () => {
+    resetWarnings();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let attempts = 0;
+    const { handle } = mount(
+      {},
+      {
+        createPanel: async () => {
+          attempts += 1;
+          if (attempts === 1) throw new Error("Failed to fetch dynamically imported module");
+          const { createPanel } = await import("../src/panel/panel.js");
+          return createPanel({ api: {}, options: {}, doc: document });
+        },
+      },
+    );
+    await expect(handle.open()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain("Failed to fetch");
+    expect(document.getElementById("fbh-host")).toBe(null);
+    await handle.open();
+    expect(attempts).toBe(2);
+    expect(hostOverlay().hidden).toBe(false);
+    handle.destroy();
+    warn.mockRestore();
+  });
+
+  it("resolves at once, showing nothing, after destroy()", async () => {
+    const { handle } = mount();
+    handle.destroy();
+    await expect(handle.open()).resolves.toBeUndefined();
+    expect(document.getElementById("fbh-host")).toBe(null);
   });
 });

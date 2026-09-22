@@ -6,7 +6,8 @@
 //
 // `splitting` is what makes it worth building at all: each `import()` becomes a chunk of its own,
 // so the network log of a page that never opens the panel is the evidence that the two
-// dependencies really are loaded on demand, rather than a promise made by reading the imports.
+// dependencies, and the panel itself, really are loaded on demand, rather than a promise made by
+// reading the imports.
 import { rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -38,11 +39,12 @@ for (const [file, meta] of Object.entries(result.metafile.outputs)) {
   if (inputs.some((one) => one.includes("node_modules/@rrweb/record"))) manifest.recorder = url;
   else if (inputs.some((one) => one.includes("node_modules/modern-screenshot")))
     manifest.screenshot = url;
+  else if (inputs.some((one) => one.includes("src/panel/"))) manifest.panel = url;
   else if (file.endsWith("/demo.js")) manifest.entry = url;
 }
-if (!manifest.recorder || !manifest.screenshot) {
+if (!manifest.recorder || !manifest.screenshot || !manifest.panel) {
   throw new Error(
-    `the two lazy dependencies are not on chunks of their own: ${JSON.stringify(manifest)}`,
+    `the two lazy dependencies and the panel are not on chunks of their own: ${JSON.stringify(manifest)}`,
   );
 }
 await writeFile(new URL("demo/dist/chunks.json", root), `${JSON.stringify(manifest, null, 2)}\n`);

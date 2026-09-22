@@ -55,6 +55,12 @@ development. `getToken` returning `null` disables submit with "Sign in to report
 `mountFeedback` returns `{ open, close, submit(fields), list(), reply(id, text), retry(id), destroy }`.
 An app that wants its own UI can use those and never open the built-in panel.
 
+`open()` returns a promise. The panel is loaded on demand — it is fetched the first time it is
+opened, never on page load — so the promise resolves once the panel is on the page, and code that
+inspects the DOM right after calling `open()` sees nothing yet. It never rejects: if the panel's
+chunk cannot be fetched (offline, a deployment that replaced it) the library warns once and
+resolves, and the next `open()` tries again. Wiring `open` to a button needs no `await`.
+
 ## Theming
 
 The panel renders in a Shadow DOM and takes its colours from thirteen custom properties with light
@@ -116,13 +122,14 @@ replay's own first event, a masked snapshot taken by rrweb.
 
 ## Size
 
-The budget is the library's own code under **15 KB gzipped**, minified, with the two lazy
-dependencies excluded. It is not met: v0.1.0 is **19.3 KB** (`pnpm size`, which prints the number
-and fails if it grows). The gap is the panel — its markup, its list and its stylesheet are about
-half the bundle, and every one of them is only needed once somebody opens it. Loading
-`src/panel/panel.js` on demand would bring the library to 10.3 KB, comfortably inside the budget,
-at the cost of making `open()` asynchronous; that is a change to what `open()` promises and is
-left for its own release. Until then `pnpm size` holds the number where it is.
+The budget is what a dashboard downloads for this library on a page load: under **15 KB
+gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.1.0 is
+**11.2 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
+it). The panel — its markup, its list and its stylesheet, another 9.5 KB — is a chunk of its own,
+fetched the first time `open()` is called, which is why `open()` returns a promise. The two
+dependencies are chunks of their own too: the recorder is fetched on the first idle moment after
+mount, the screenshot module when a screenshot is taken. `pnpm size` fails if any of the three
+becomes a static import.
 
 ## Develop
 
