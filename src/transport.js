@@ -88,10 +88,12 @@ export function createTransport({ hubUrl, app, getToken, fetch: fetchImpl } = {}
   }
 
   async function call(path, { method = "GET", headers = {}, body } = {}) {
-    const auth = await authorization();
+    // Offline first: an app whose getToken() refreshes over the network fails offline too, and
+    // "sign in" would be the wrong thing to tell someone whose connection is what is missing.
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       throw new FeedbackError(messageFor(0, "offline", ""), { status: 0, code: "offline" });
     }
+    const auth = await authorization();
     let res;
     try {
       res = await doFetch(`${base}${path}`, { method, headers: { ...auth, ...headers }, body });

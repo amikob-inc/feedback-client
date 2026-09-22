@@ -110,6 +110,28 @@ describe("createTransport", () => {
     expect(error.message).toBe("That is too big to send. Leave the screenshot out and try again.");
   });
 
+  it("says offline before it asks for a token, so an app whose getToken() needs the network is not told to sign in", async () => {
+    const onLine = Object.getOwnPropertyDescriptor(navigator, "onLine");
+    Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
+    try {
+      const transport = createTransport({
+        hubUrl: "https://hub.example/",
+        app: "cad",
+        getToken: async () => {
+          throw new TypeError("Failed to fetch");
+        },
+        fetch: async () => {
+          throw new Error("must not be called");
+        },
+      });
+      const error = await transport.list().catch((err) => err);
+      expect(error.code).toBe("offline");
+    } finally {
+      if (onLine) Object.defineProperty(navigator, "onLine", onLine);
+      else delete navigator.onLine;
+    }
+  });
+
   it("turns a thrown fetch into the offline message", async () => {
     const fetchImpl = async () => {
       throw new TypeError("Failed to fetch");
