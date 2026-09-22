@@ -155,9 +155,17 @@ export function expectedFate(position, settings) {
     return fate("withheld", "a query string can carry a token, however the page writes it down");
   }
   // A whole document in one attribute, and the third review round in which it has escaped. rrweb
-  // has no option for it; scrubReplayEvent deletes it, in every zone (audit finding F9/G1).
+  // has no option for it; scrubReplayEvent deletes the attribute, in every zone (audit finding
+  // F9/G1). That is all this position can see: jsdom never renders a srcdoc frame, so the marker
+  // exists only in the attribute here. In a real browser the frame *is* rendered and its visible
+  // text is recorded through rrweb's child-document path like any other on-screen content, with
+  // the same masking and blanking inside it — the browser run (e2e/panel.spec.js) shows both
+  // halves: the rendered text present, the attribute-only part absent.
   if (position.id.startsWith("attr/srcdoc/")) {
-    return fate("withheld", "an <iframe srcdoc> is a whole document in one attribute");
+    return fate(
+      "withheld",
+      "an <iframe srcdoc> attribute is a whole document, never on screen as such; the attribute is scrubbed (what the frame renders is recorded like any visible text, which jsdom cannot show)",
+    );
   }
   if (zone === "sensitive" || zone === "blanked") {
     return fate("withheld", "the app named this element in capture.blank");
