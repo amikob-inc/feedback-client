@@ -6,6 +6,7 @@
 // previous one goes first (spec §5.2), and if the current one alone is still too big there is no
 // replay part at all.
 import { byteLength } from "../bytes.js";
+import { scrubHref } from "../url.js";
 import { blankSelector } from "../selectors.js";
 import { warnOnce } from "../warn.js";
 
@@ -127,23 +128,6 @@ export function maskInputOptionsFor(maskAllInputs) {
   return options;
 }
 
-// Strips the query string out of a URL and keeps everything else, including the fragment. Never
-// throws: an href this cannot parse is cut by hand rather than passed through, because passing it
-// through is the failure that matters.
-export function stripQuery(href) {
-  const text = typeof href === "string" ? href : "";
-  try {
-    const url = new URL(text);
-    url.search = "";
-    return url.toString();
-  } catch {
-    const at = text.indexOf("?");
-    if (at === -1) return text;
-    const hash = text.indexOf("#", at);
-    return hash === -1 ? text.slice(0, at) : text.slice(0, at) + text.slice(hash);
-  }
-}
-
 // Every URL a serialised node can carry. rrweb absolutises each of them against the document and
 // writes it whole, so a token in a query string travels in an anchor exactly as it travels in the
 // Meta event — and this library already strips the query in four other places (`pageContext`, the
@@ -175,14 +159,14 @@ const ELEMENT_NODE = 2;
 export const FULL_SNAPSHOT_EVENT = 2;
 export const INCREMENTAL_SNAPSHOT_EVENT = 3;
 
-function stripQueryFromSrcset(value) {
+function scrubSrcset(value) {
   return value
     .split(",")
     .map((candidate) => {
       const trimmed = candidate.trim();
       const space = trimmed.search(/\s/);
-      if (space === -1) return stripQuery(trimmed);
-      return `${stripQuery(trimmed.slice(0, space))}${trimmed.slice(space)}`;
+      if (space === -1) return scrubHref(trimmed);
+      return `${scrubHref(trimmed.slice(0, space))}${trimmed.slice(space)}`;
     })
     .join(", ");
 }
@@ -232,8 +216,9 @@ export function scrubAttributes(tagName, attributes, maskInputOptions = {}) {
 
   for (const name of URL_ATTRIBUTES) {
     const value = attributes[name];
-    if (typeof value !== "string" || !value.includes("?")) continue;
-    set(name, name === "srcset" ? stripQueryFromSrcset(value) : stripQuery(value));
+    // A query string, or a fragment that could be carrying parameters (`#access_token=…`).
+    if (typeof value !== "string" || !(value.includes("?") || value.includes("#"))) continue;
+    set(name, name === "srcset" ? scrubSrcset(value) : scrubHref(value));
   }
   return out || attributes;
 }
@@ -295,7 +280,7 @@ export function scrubReplayEvent(event, maskInputOptions = ALWAYS_MASKED_INPUTS)
   const data = event.data;
   if (event.type === META_EVENT) {
     if (!data || typeof data.href !== "string" || !data.href.includes("?")) return event;
-    return { ...event, data: { ...data, href: stripQuery(data.href) } };
+    return { ...event, data: { ...data, href: scrubHref(data.href) } };
   }
   if (event.type === FULL_SNAPSHOT_EVENT && data && data.node) {
     const node = scrubNode(data.node, maskInputOptions);

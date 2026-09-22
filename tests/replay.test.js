@@ -17,7 +17,6 @@ import {
   scrubReplayEvent,
   serializeReplay,
   startReplay,
-  stripQuery,
 } from "../src/capture/replay.js";
 import { resetWarnings } from "../src/warn.js";
 
@@ -254,26 +253,6 @@ describe("rrwebOptions", () => {
     expect(slim.headMetaHttpEquiv).toBe(true);
     // Kept: a dashboard retitles itself on every route change and the replay should follow.
     expect(slim.headTitleMutations).toBeUndefined();
-  });
-});
-
-describe("stripQuery", () => {
-  it("drops the query and keeps everything else", () => {
-    expect(stripQuery("https://app.example/rings?token=abc")).toBe("https://app.example/rings");
-    expect(stripQuery("https://app.example/rings?token=abc#batch-7")).toBe(
-      "https://app.example/rings#batch-7",
-    );
-    expect(stripQuery("https://app.example/rings#batch-7")).toBe(
-      "https://app.example/rings#batch-7",
-    );
-  });
-
-  it("falls back to cutting by hand on a URL it cannot parse, and never throws", () => {
-    expect(stripQuery("not a url?token=abc")).toBe("not a url");
-    expect(stripQuery("not a url?token=abc#tail")).toBe("not a url#tail");
-    expect(stripQuery(undefined)).toBe("");
-    expect(stripQuery(null)).toBe("");
-    expect(stripQuery(7)).toBe("");
   });
 });
 

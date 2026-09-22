@@ -106,9 +106,13 @@ page:
 Passwords are always masked in the replay and the click trail. `maskAllInputs: true` masks every
 typed value in both. `blank: [".sku-price"]` blanks matching elements in the replay
 (rrweb's `blockSelector`), withholds them from the click trail, and empties them in the screenshot
-— which the browser test checks by reading the sent picture back as pixels. Request headers,
-cookies and query strings are never captured. The reporter sees what is attached before sending
-and can leave the recording out. The only network destination is `hubUrl`.
+— which the browser test checks by reading the sent picture back as pixels. The screenshot is a
+picture of what is on screen: it masks passwords and empties `blank` elements, and nothing else —
+a value typed into an ordinary field is in it, `maskAllInputs` or not. Request headers, cookies
+and query strings are never captured, and neither is a URL fragment that carries parameters
+(`#access_token=…`, where supabase-js's implicit flow lands a session); a plain route fragment
+(`#batch-12`) is kept. The reporter sees what is attached before sending and can leave the
+recording out. The only network destination is `hubUrl`.
 
 Same-origin `<iframe>`s are part of the recording, and the same masking and the same `blank`
 selectors apply inside them. An `<iframe srcdoc>`'s attribute is withheld whole, because it can

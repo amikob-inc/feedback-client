@@ -21,6 +21,7 @@
 // of, or through, an element the app asked to blank, whichever direction it arrives from.**
 import { Ring, cut } from "./ring.js";
 import { blankSelector } from "../selectors.js";
+import { routePath } from "../url.js";
 import { warnOnce } from "../warn.js";
 
 export const BREADCRUMBS_KEEP = 100;
@@ -190,7 +191,7 @@ export function installBreadcrumbBuffer({
     }
   };
 
-  const path = () => `${target.location.pathname}${target.location.hash}`;
+  const path = () => routePath(target.location);
   const describe = (el, full) => (isBlanked(el) ? hiddenTarget(el) : full(el));
   // Both checks, in both directions, for all three describers: `describe` refuses an element at
   // or inside a blanked one, and `blankSelector` goes on to the describer so it also refuses to

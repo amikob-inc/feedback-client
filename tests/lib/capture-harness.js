@@ -404,8 +404,21 @@ async function runInteractions(channels) {
   await failedFetch(`/api/rings/${channels.markers.get("network-path")}`);
   await failedFetch(`/api/rings?token=${channels.markers.get("network-query")}`);
   window.history.pushState({}, "", `#${channels.markers.get("route-hash")}`);
+  // The shape supabase-js's implicit flow leaves on a recovery landing page, and the shape
+  // cad-dashboard's auth bootstrap reads `type` and `access_token` out of.
+  window.history.pushState(
+    {},
+    "",
+    `#access_token=${channels.markers.get("route-hash-params")}&type=recovery`,
+  );
   window.history.pushState({}, "", `/rings?token=${channels.markers.get("route-query")}`);
-  window.history.replaceState({}, "", `/rings?token=${channels.markers.get("location-query")}`);
+  // The page the library is mounted on: a query string and a parameter fragment together, so
+  // both the page context and the recorder's Meta href are asked about both at once.
+  window.history.replaceState(
+    {},
+    "",
+    `/rings?token=${channels.markers.get("location-query")}#access_token=${channels.markers.get("location-hash-params")}&type=recovery`,
+  );
 }
 
 function throwMarkedError(messageMarker, stackMarker) {

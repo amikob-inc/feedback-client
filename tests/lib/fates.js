@@ -238,12 +238,20 @@ const CHANNEL_FATES = {
     { expect: "withheld" },
   ],
   "route-hash": ["the hash is part of the route a dashboard navigates by", { expect: "published" }],
+  "route-hash-params": [
+    "a fragment carrying parameters is where supabase-js's implicit flow lands a session (#access_token=…), and the route breadcrumb drops it whole",
+    { expect: "withheld" },
+  ],
   "route-query": [
     "a route breadcrumb carries path and hash, never a query string",
     { expect: "withheld" },
   ],
   "location-query": [
     "pageContext drops the query deliberately (a magic-link token lives there) and the recorder's Meta event must not put it back",
+    { expect: "withheld" },
+  ],
+  "location-hash-params": [
+    "pageContext drops a fragment that carries parameters (a session lives there on a recovery landing page) and the recorder's Meta event must not put it back",
     { expect: "withheld" },
   ],
   "document-title": ["the page title names the view being reported on", { expect: "published" }],

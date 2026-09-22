@@ -11,6 +11,7 @@ import { captureScreenshot } from "./capture/screenshot.js";
 import { defaultSection, normalizeOptions } from "./options.js";
 import { attentionIds, markSeen, readSeen, safeStorage, seenKey, writeSeen } from "./seen.js";
 import { FeedbackError, createTransport } from "./transport.js";
+import { routePath } from "./url.js";
 import { warnOnce } from "./warn.js";
 
 // An app that wants its own UI passes `deps.createPanel` (spec §5.4, "Headless use"); everyone
@@ -62,9 +63,11 @@ export function resolveButton(button, doc) {
 export function pageContext({ doc, win, options }) {
   const nav = win.navigator || {};
   return {
-    // pathname + hash only, deliberately: a query string can carry a token (cad-dashboard's own
-    // router puts one in a magic-link redirect), and nothing here may capture that.
-    path: `${win.location.pathname}${win.location.hash}`,
+    // pathname, and the fragment only when it is a route rather than parameters (src/url.js): a
+    // query string can carry a token (cad-dashboard's router puts one in a magic-link redirect)
+    // and so can the fragment (supabase-js lands the session there), and nothing here may
+    // capture either.
+    path: routePath(win.location),
     view: asText(safeCall(options.section, "", "section()"), "section()"),
     title: asText(doc.title, "document.title"),
     viewport: [win.innerWidth || 0, win.innerHeight || 0],

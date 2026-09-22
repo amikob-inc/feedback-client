@@ -149,12 +149,17 @@ describe("the rules that hold under every setting", () => {
     }
   });
 
-  it("never sends the page's query string, however the page is reached", () => {
+  it("never sends the page's query string, or a fragment carrying parameters, however the page is reached", () => {
+    const channels = [
+      "location-query",
+      "route-query",
+      "network-query",
+      "location-hash-params",
+      "route-hash-params",
+    ];
     for (const [name, run] of Object.entries(runs)) {
-      const queries = run.results.filter((one) =>
-        ["location-query", "route-query", "network-query"].includes(one.position.channel),
-      );
-      expect(queries.length).toBe(3);
+      const queries = run.results.filter((one) => channels.includes(one.position.channel));
+      expect(queries.length).toBe(channels.length);
       expect(
         queries.filter((one) => one.hits.length).map((one) => `${name}/${one.position.id}`),
       ).toEqual([]);
