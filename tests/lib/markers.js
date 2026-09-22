@@ -773,6 +773,10 @@ export function screenshotPositions() {
         // markup the picture never shows.
         const el = ctx.doc.createElement("textarea");
         el.appendChild(ctx.doc.createTextNode(ctx.marker));
+        // A decoy live value: modern-screenshot copies the live value onto the clone as a
+        // `value` attribute (unpainted), so with the marker only in the child text a control run
+        // is satisfied by what the picture paints and by nothing else.
+        el.value = "not the marker";
         ctx.parent.appendChild(el);
       },
     }),
