@@ -144,7 +144,7 @@ pnpm lint
 pnpm format:check
 pnpm size          # the minified, gzipped size against the budget and the current ceiling
 pnpm demo          # builds the demo bundle and serves it: http://localhost:8787/demo/index.html
-pnpm test:e2e      # Playwright against that same stub hub
+pnpm test:e2e      # Playwright, on a stub hub and a bundle of its own (stop `pnpm demo` first)
 ```
 
 `tests/stub-hub.mjs` stands in for the hub: it answers the four client routes with canned data, it
