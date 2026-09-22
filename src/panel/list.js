@@ -231,11 +231,12 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     text: "My reports",
   });
   const listEl = el(doc, "ul", { class: "fbh-list", "aria-labelledby": "fbh-reports-heading" });
+  const EMPTY_TEXT = "Nothing yet. Your reports will show up here.";
   const empty = el(doc, "p", {
     class: "fbh-empty",
     role: "status",
     "aria-live": "polite",
-    text: "Nothing yet. Your reports will show up here.",
+    text: EMPTY_TEXT,
   });
   const element = el(
     doc,
@@ -280,6 +281,10 @@ export function createList({ api, options, doc, now = () => new Date() }) {
   // their place here happens without them doing anything at all.
   function render() {
     empty.hidden = items.length > 0;
+    // A failed fetch writes its message here (see refresh()); the next listing that succeeds,
+    // the poll's included, must put the placeholder back rather than leave "session expired"
+    // standing over an empty list.
+    empty.textContent = EMPTY_TEXT;
     const ctx = context();
     const h = handlers();
 

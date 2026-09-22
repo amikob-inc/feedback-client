@@ -285,6 +285,11 @@ export function createForm({
   // nothing does (the position fell off the end). Omitted entirely on the calls that only add an
   // attachment: those have nothing to restore.
   function renderStrip(focus) {
+    // The thumbnails being torn down are the only things holding these URLs, and each one pins
+    // a whole screenshot Blob until it is revoked: prepare() retakes the picture on every open,
+    // so without this a colleague opening the panel to read "My reports" keeps one full-page
+    // PNG alive per open for the life of the page.
+    releaseUrls();
     clear(strip);
     if (screenshot) {
       strip.appendChild(

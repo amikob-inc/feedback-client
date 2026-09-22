@@ -96,6 +96,23 @@ describe("createPanel", () => {
     }
   });
 
+  // open() on an open panel is a real path, not a theoretical one: the mount calls it twice for
+  // two clicks while the panel's chunk is still loading. Without the guard the second call
+  // records a control inside the panel as "where focus came from", and close() then hands focus
+  // back into the hidden dialog instead of to the app's button.
+  it("ignores open() while already open, so close() still gives focus back to the app", () => {
+    document.body.innerHTML = `<button id="opener"></button>`;
+    const opener = document.getElementById("opener");
+    const { panel } = setup();
+    opener.focus();
+    panel.open();
+    panel.open();
+    expect(document.activeElement).not.toBe(opener); // focus really did move into the panel
+    panel.close();
+    expect(document.activeElement).toBe(opener);
+    panel.destroy();
+  });
+
   it("closes on Escape, on the close button and on the backdrop, and gives focus back", () => {
     document.body.innerHTML = `<button id="opener"></button>`;
     const opener = document.getElementById("opener");

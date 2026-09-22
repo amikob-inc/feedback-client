@@ -383,6 +383,26 @@ describe("createList", () => {
     list.destroy();
   });
 
+  it("puts the placeholder back once a listing succeeds after one failed", async () => {
+    let fail = true;
+    const { list } = setup({
+      list: async () => {
+        if (fail) throw new Error("Your session expired; sign in again.");
+        return { items: [], nextCursor: null };
+      },
+    });
+    await list.refresh();
+    expect(document.querySelector(".fbh-empty").textContent).toBe(
+      "Your session expired; sign in again.",
+    );
+    fail = false;
+    await list.refresh();
+    expect(document.querySelector(".fbh-empty").textContent).toBe(
+      "Nothing yet. Your reports will show up here.",
+    );
+    list.destroy();
+  });
+
   it("shows why the list could not be fetched", async () => {
     const { list } = setup({
       list: async () => {

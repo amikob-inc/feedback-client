@@ -107,6 +107,35 @@ describe("createForm", () => {
     form.destroy();
   });
 
+  it("revokes the previous strip's object URLs when it rebuilds, so a reopened panel pins one screenshot, not one per open", async () => {
+    const made = [];
+    const revoked = [];
+    const create = URL.createObjectURL;
+    const revoke = URL.revokeObjectURL;
+    URL.createObjectURL = () => {
+      const url = `blob:test/${made.length}`;
+      made.push(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => revoked.push(url);
+    try {
+      const { form } = setup();
+      // prepare() rebuilds the strip twice, before and after the capture, and each rebuild of a
+      // strip with a screenshot on it makes a URL. Whatever the count, only the URL on screen
+      // now may still be alive.
+      await form.prepare();
+      await form.prepare();
+      await form.prepare();
+      expect(made.length).toBeGreaterThan(1);
+      expect(revoked).toEqual(made.slice(0, -1));
+      form.destroy();
+      expect(revoked).toEqual(made);
+    } finally {
+      URL.createObjectURL = create;
+      URL.revokeObjectURL = revoke;
+    }
+  });
+
   it("refuses an empty description without calling the hub", async () => {
     const { form, api } = setup();
     await form.prepare();

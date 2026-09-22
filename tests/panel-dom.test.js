@@ -1,6 +1,35 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from "vitest";
-import { clear, el, firstLine, relativeTime } from "../src/panel/dom.js";
+import { activeWithin, clear, el, firstLine, relativeTime } from "../src/panel/dom.js";
+
+// The one question every focus guard in the panel asks, and the one `document.activeElement`
+// answers wrongly for anything inside a shadow root (it names the host). jsdom does implement
+// `attachShadow` and a shadow root's own `activeElement`, so the difference is testable here in
+// milliseconds rather than only in the browser run.
+describe("activeWithin", () => {
+  it("finds focus inside a shadow root, where document.activeElement only names the host", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const shadow = host.attachShadow({ mode: "open" });
+    const box = document.createElement("div");
+    const button = document.createElement("button");
+    box.appendChild(button);
+    shadow.appendChild(box);
+    button.focus();
+    expect(document.activeElement).toBe(host);
+    expect(activeWithin(box)).toBe(button);
+  });
+
+  it("answers null when focus is elsewhere, in either kind of tree", () => {
+    document.body.innerHTML = `<div id="a"><button id="in"></button></div><button id="out"></button>`;
+    const a = document.getElementById("a");
+    document.getElementById("in").focus();
+    expect(activeWithin(a)).toBe(document.getElementById("in"));
+    document.getElementById("out").focus();
+    expect(activeWithin(a)).toBe(null);
+    expect(activeWithin(null)).toBe(null);
+  });
+});
 
 describe("el", () => {
   it("builds an element with attributes, text and children", () => {
