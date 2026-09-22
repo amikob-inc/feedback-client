@@ -247,11 +247,11 @@ const CHANNEL_FATES = {
     { expect: "withheld" },
   ],
   "location-query": [
-    "pageContext drops the query deliberately (a magic-link token lives there) and the recorder's Meta event must not put it back",
+    "pageContext drops the query deliberately (a magic-link token lives there); the recorder's Meta event never carries this one here (the page is planted with the fragment position before the recorder starts), and is checked for a query in tests/replay.test.js",
     { expect: "withheld" },
   ],
   "location-hash-params": [
-    "pageContext drops a fragment that carries parameters (a session lives there on a recovery landing page) and the recorder's Meta event must not put it back",
+    "pageContext drops a fragment that carries parameters (a session lives there on a recovery landing page) and the recorder's Meta event, which starts on that very page, must not put it back",
     { expect: "withheld" },
   ],
   "document-title": ["the page title names the view being reported on", { expect: "published" }],

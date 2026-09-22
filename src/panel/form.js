@@ -288,7 +288,8 @@ export function createForm({
     // The thumbnails being torn down are the only things holding these URLs, and each one pins
     // a whole screenshot Blob until it is revoked: prepare() retakes the picture on every open,
     // so without this a colleague opening the panel to read "My reports" keeps one full-page
-    // PNG alive per open for the life of the page.
+    // PNG alive per open for the life of the page. (Before or after clear() makes no difference:
+    // nothing paints between two synchronous statements.)
     releaseUrls();
     clear(strip);
     if (screenshot) {

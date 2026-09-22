@@ -30,10 +30,12 @@ export default defineConfig({
   webServer: {
     // The bundle has to exist before the first `?real=1` page is opened, and it is built from the
     // library's own sources, so it is rebuilt on every run rather than trusted from last time.
-    // That only holds while this command always runs: with `reuseExistingServer` a `pnpm demo`
-    // left up (or a previous run's server still dying) would be adopted, the build skipped, and
-    // the suite would pass against last time's bundle — a false green on the four claims only
-    // this suite can make. So the port has to be free, and the run says so if it is not.
+    // That only holds while this command always runs: with `reuseExistingServer` (which used to
+    // be on outside CI) a `pnpm demo` left up, or a previous run's server still dying, was
+    // adopted, the build skipped, and the suite passed locally against last time's bundle — a
+    // false green on the four claims only this suite can make. CI never reused a server; a
+    // developer's machine now does not either. The port has to be free, and the run says so if
+    // it is not.
     command: "node tools/build-demo.mjs && node tests/stub-hub.mjs",
     url: `http://localhost:${PORT}/livez`,
     reuseExistingServer: false,

@@ -168,7 +168,17 @@ function plantChannels(root, by) {
   ordinary.appendChild(outsideField);
 
   document.title = `Rings — ${by.get("document-title")}`;
-  window.history.replaceState({}, "", `/rings?token=${by.get("location-query")}`);
+  // The page the recorder starts on, so the marker is in the Meta event's href: a recovery
+  // landing page — the session in the fragment and no query string at all. Deliberately not the
+  // query-string position: with a `?` beside it a scrubber gated on `?` alone would have looked
+  // right. The query-string position joins the location later, in runInteractions(), where the
+  // page context reads it at submit; the Meta event's query case is a unit test in
+  // tests/replay.test.js.
+  window.history.replaceState(
+    {},
+    "",
+    `/rings#access_token=${by.get("location-hash-params")}&type=recovery`,
+  );
 
   return {
     markers: by,

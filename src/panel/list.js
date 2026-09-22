@@ -283,8 +283,9 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     empty.hidden = items.length > 0;
     // A failed fetch writes its message here (see refresh()); the next listing that succeeds,
     // the poll's included, must put the placeholder back rather than leave "session expired"
-    // standing over an empty list.
-    empty.textContent = EMPTY_TEXT;
+    // standing over an empty list. Only when it differs: this is a live region, and replacing
+    // its text node every thirty seconds would be read out every thirty seconds.
+    if (empty.textContent !== EMPTY_TEXT) empty.textContent = EMPTY_TEXT;
     const ctx = context();
     const h = handlers();
 

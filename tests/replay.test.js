@@ -261,6 +261,26 @@ describe("scrubReplayEvent", () => {
   // router puts a magic-link token in one. rrweb's Meta event carries window.location.href whole,
   // which undoes that decision; the marker harness found it by planting a marker in the page's
   // own query string (channel/location-query).
+  it("takes a parameter fragment out of a Meta event's href, with no query string beside it", () => {
+    // The recovery landing page: no `?` at all, the session in the fragment. A gate that looks
+    // for a query string alone lets this one through untouched.
+    const event = {
+      type: META_EVENT,
+      data: {
+        href: "https://app.example/#access_token=eyJ.SECRET.x&refresh_token=r-1&type=recovery",
+        width: 1280,
+        height: 800,
+      },
+      timestamp: 1,
+    };
+    const out = scrubReplayEvent(event);
+    expect(out.data.href).toBe("https://app.example/");
+    expect(out).not.toBe(event);
+    // A route fragment is not parameters and stays.
+    const route = { type: META_EVENT, data: { href: "https://app.example/rings#batch-7" } };
+    expect(scrubReplayEvent(route)).toBe(route);
+  });
+
   it("takes the query string out of a Meta event's href", () => {
     const event = {
       type: META_EVENT,

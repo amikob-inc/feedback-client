@@ -10,8 +10,12 @@ First release, Mission 16 piece C1.
 - `mountFeedback(options, deps?)`: the headless API (`open`, `close`, `submit`, `list`, `reply`,
   `retry`, `destroy`) and the built-in Shadow-DOM panel that uses it. The panel is loaded on
   demand, so `open()` returns a promise that resolves once it is showing.
-- Capture: console (200 entries, 1 KB each), errors (20), network (50 failed or slow, query
-  strings stripped), breadcrumbs (100), rrweb replay (two 60-second segments) and a screenshot.
+- Capture: console (200 entries, 1 KB each), errors (20), network (50 failed or slow), breadcrumbs
+  (100), rrweb replay (two 60-second segments) and a screenshot. Wherever a URL is written down
+  — the page context, the route breadcrumb, a network entry, the replay's Meta href and every
+  URL attribute in it — the query string goes, and so does a fragment that carries parameters
+  (`#access_token=…`, where supabase-js's implicit flow lands a session); a route fragment
+  (`#batch-12`) stays.
   No bespoke copy of the page: one was built and withdrawn before release (2026-09-21), because
   three adversarial reviews got sensitive data past its sanitiser.
 - One multipart bundle to `POST /v1/reports` with every cap the hub enforces, and a friendly

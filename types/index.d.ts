@@ -53,6 +53,26 @@ export interface MountOptions {
   capture?: CaptureOptions;
 }
 
+/**
+ * `MountOptions` after `mountFeedback` has filled it in: every hook is a function, the lists are
+ * arrays, `capture` is complete. This is what a panel is handed, so a panel need not re-check.
+ */
+export interface NormalizedOptions {
+  hubUrl: string;
+  app: string;
+  env: string;
+  version: string;
+  getToken: () => Promise<string | null>;
+  user: () => Reporter | null;
+  section: () => string;
+  sections: string[];
+  types: string[];
+  button: string | Element | null;
+  theme: () => "light" | "dark" | string;
+  onSummary: (summary: { attention: number }) => void;
+  capture: Required<CaptureOptions>;
+}
+
 /** What the built-in panel is handed, and what a panel supplied through `MountDeps.createPanel` gets. */
 export interface PanelApi extends FeedbackHandle {
   /** The reporter has now seen these; they stop counting towards `onSummary`'s attention. */
@@ -61,7 +81,7 @@ export interface PanelApi extends FeedbackHandle {
   captureScreenshot(): Promise<Blob | null>;
   /** Settles once, to whether a recording is really being made. */
   replayReady: Promise<boolean>;
-  options: MountOptions;
+  options: NormalizedOptions;
 }
 
 /** A seam for tests and for an app that brings its own panel. Not part of the options object. */
@@ -77,7 +97,7 @@ export interface MountDeps {
   /** Built the first time open() is called; may return a promise, as the built-in loader does. */
   createPanel?: (context: {
     api: PanelApi;
-    options: MountOptions;
+    options: NormalizedOptions;
     doc: Document;
   }) => Panel | Promise<Panel>;
 }

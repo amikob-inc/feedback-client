@@ -14,8 +14,9 @@ export const REPLAY_JSON_MAX = 8 * 1024 * 1024;
 export const CHECKOUT_MS = 60000;
 export const SAMPLING = { mousemove: 50, scroll: 150, input: "last" };
 
-// rrweb's Meta event. Its `data.href` is `window.location.href` — the whole URL, query string
-// included — and stripping the query there is the one place this library can do it.
+// rrweb's Meta event. Its `data.href` is `window.location.href` — the whole URL, query string and
+// fragment included — and scrubbing it there is the one place this library can do it (src/url.js
+// says what goes: the query, and a fragment that carries parameters).
 export const META_EVENT = 4;
 
 // Field kinds that are masked whatever the app asked for. `password` is obvious. `hidden` is not
@@ -129,12 +130,12 @@ export function maskInputOptionsFor(maskAllInputs) {
 }
 
 // Every URL a serialised node can carry. rrweb absolutises each of them against the document and
-// writes it whole, so a token in a query string travels in an anchor exactly as it travels in the
-// Meta event — and this library already strips the query in four other places (`pageContext`, the
-// Meta event, every network entry, the route breadcrumb) for that one reason: cad-dashboard's
-// router puts a magic-link token in one. An anchor back to the current page is the same token, so
-// it gets the same treatment. The cost is a replay whose signed or cache-busted image URLs no
-// longer resolve — a broken image rather than a live credential, which is the right way round.
+// writes it whole, so a token in a query string or a session in a fragment travels in an anchor
+// exactly as it travels in the Meta event — and this library applies one rule (src/url.js) in
+// every other place a URL is written down (`pageContext`, the Meta event, every network entry,
+// the route breadcrumb). An anchor back to the current page carries the same token, so it gets
+// the same treatment. The cost is a replay whose signed or cache-busted image URLs no longer
+// resolve — a broken image rather than a live credential, which is the right way round.
 export const URL_ATTRIBUTES = [
   "href",
   "src",
@@ -279,8 +280,17 @@ export function scrubReplayEvent(event, maskInputOptions = ALWAYS_MASKED_INPUTS)
   if (!event) return event;
   const data = event.data;
   if (event.type === META_EVENT) {
-    if (!data || typeof data.href !== "string" || !data.href.includes("?")) return event;
-    return { ...event, data: { ...data, href: scrubHref(data.href) } };
+    // Both shapes, not only `?`: a recovery landing page is `/#access_token=…` with no query at
+    // all, and rrweb writes this href at record start and again on every checkout snapshot.
+    if (
+      !data ||
+      typeof data.href !== "string" ||
+      !(data.href.includes("?") || data.href.includes("#"))
+    ) {
+      return event;
+    }
+    const href = scrubHref(data.href);
+    return href === data.href ? event : { ...event, data: { ...data, href } };
   }
   if (event.type === FULL_SNAPSHOT_EVENT && data && data.node) {
     const node = scrubNode(data.node, maskInputOptions);

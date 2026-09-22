@@ -120,14 +120,17 @@ describe("createForm", () => {
     URL.revokeObjectURL = (url) => revoked.push(url);
     try {
       const { form } = setup();
-      // prepare() rebuilds the strip twice, before and after the capture, and each rebuild of a
-      // strip with a screenshot on it makes a URL. Whatever the count, only the URL on screen
-      // now may still be alive.
+      // Two attached images beside the screenshot, so every rebuild makes three URLs and the
+      // revoke loop is exercised over more than one. prepare() rebuilds the strip twice, before
+      // and after the capture; whatever the count, only the three on screen now may still be
+      // alive.
+      form.addImage(png(), "one.png");
+      form.addImage(png(), "two.png");
       await form.prepare();
       await form.prepare();
       await form.prepare();
-      expect(made.length).toBeGreaterThan(1);
-      expect(revoked).toEqual(made.slice(0, -1));
+      expect(made.length).toBeGreaterThan(3);
+      expect(revoked).toEqual(made.slice(0, -3));
       form.destroy();
       expect(revoked).toEqual(made);
     } finally {

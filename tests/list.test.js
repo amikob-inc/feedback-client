@@ -397,9 +397,13 @@ describe("createList", () => {
     );
     fail = false;
     await list.refresh();
-    expect(document.querySelector(".fbh-empty").textContent).toBe(
-      "Nothing yet. Your reports will show up here.",
-    );
+    const empty = document.querySelector(".fbh-empty");
+    expect(empty.textContent).toBe("Nothing yet. Your reports will show up here.");
+    // And not rewritten on the next poll: the placeholder is a live region, and a text node
+    // replaced every thirty seconds is announced every thirty seconds.
+    const node = empty.firstChild;
+    await list.refresh();
+    expect(empty.firstChild).toBe(node);
     list.destroy();
   });
 

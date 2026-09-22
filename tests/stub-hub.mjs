@@ -259,9 +259,16 @@ async function handle(req, res) {
 // one of the two would leave whichever name the machine resolves the other way unreachable, and
 // the failure would read as a broken library rather than a half-bound stub. `::1` is best effort:
 // a host without IPv6 simply serves the IPv4 socket.
-createServer(handle).listen(PORT, "127.0.0.1", () => {
-  console.log(`stub hub on http://localhost:${PORT} (demo at /demo/index.html)`);
-});
+createServer(handle)
+  .on("error", (err) => {
+    // Without this an EADDRINUSE crashes the process silently and Playwright waits out its whole
+    // webServer timeout before saying anything; with it the cause is the first line printed.
+    console.error(`stub hub could not listen on ${PORT}: ${err.message}`);
+    process.exit(1);
+  })
+  .listen(PORT, "127.0.0.1", () => {
+    console.log(`stub hub on http://localhost:${PORT} (demo at /demo/index.html)`);
+  });
 createServer(handle)
   .on("error", () => {})
   .listen(PORT, "::1");

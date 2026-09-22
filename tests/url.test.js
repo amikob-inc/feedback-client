@@ -51,6 +51,16 @@ describe("scrubHref", () => {
     expect(scrubHref("https://app.example/#/orders?page=2&token=abc")).toBe("https://app.example/");
   });
 
+  it("returns an href with nothing to remove exactly as it was, not re-serialised", () => {
+    const svg =
+      'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"><rect fill="#ccc"/></svg>';
+    expect(scrubHref(svg)).toBe(svg);
+    expect(scrubHref("HTTPS://App.Example/Path#top")).toBe("HTTPS://App.Example/Path#top");
+    expect(scrubHref("https://app.example:443/a/../b#frag")).toBe(
+      "https://app.example:443/a/../b#frag",
+    );
+  });
+
   it("cuts by hand what it cannot parse, and never throws", () => {
     expect(scrubHref("not a url?token=abc")).toBe("not a url");
     expect(scrubHref("not a url?token=abc#tail")).toBe("not a url#tail");
