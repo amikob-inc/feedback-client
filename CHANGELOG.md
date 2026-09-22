@@ -3,6 +3,16 @@
 All notable changes to this package. Consumers install a git tag
 (`pnpm add github:amikob-inc/feedback-client#vX.Y.Z`), so every release is a tag and an entry here.
 
+## 0.1.1 — 2026-09-22
+
+- `maskAllInputs: true` now masks the automatic screenshot as well: every typed value, a textarea's
+  text, a select's chosen option and editable text — the same kinds the recording masks — are
+  replaced by asterisks of the same length in the clone the picture is drawn from, so the picture
+  cannot show what the recording withholds. It was the one part that showed typed values whatever
+  the setting (the leak harness's one declared gap, now closed; three field kinds join its
+  screenshot positions, and a second, unmasked run proves the picture still shows them when asked
+  to). A checkbox's state is not a value and stays in both. Page load: 11.6 KB gzipped.
+
 ## 0.1.0 — 2026-09-21
 
 First release, Mission 16 piece C1.

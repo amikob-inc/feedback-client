@@ -9,6 +9,7 @@ import {
   captureScreenshot,
   hideBlanked,
   maskClonedPassword,
+  maskClonedValue,
 } from "../src/capture/screenshot.js";
 import { resetWarnings } from "../src/warn.js";
 
@@ -136,6 +137,29 @@ describe("captureScreenshot", () => {
     expect(password.getAttribute("value")).toBe("*******");
   });
 
+  it("passes maskAllInputs down as the same clone hook, masking what the recording masks", async () => {
+    const domToBlob = vi.fn(async () => blobOf(10));
+    await captureScreenshot({
+      load: async () => ({ domToBlob }),
+      target: document.body,
+      maskAllInputs: true,
+    });
+    const { onCloneEachNode } = domToBlob.mock.calls[0][1];
+    document.body.innerHTML =
+      '<input type="text" value="Jane Doe"><textarea>cost 1240</textarea>' +
+      '<select value="gold"><option value="gold">Gold 18k</option></select>' +
+      '<div contenteditable="true">margin <b>42%</b></div><input type="checkbox" checked>';
+    for (const el of document.body.querySelectorAll("*")) onCloneEachNode(el);
+    expect(document.querySelector("input[type=text]").getAttribute("value")).toBe("********");
+    expect(document.querySelector("textarea").textContent).toBe("*********");
+    expect(document.querySelector("option").textContent).toBe("********");
+    expect(document.querySelector("option").getAttribute("value")).toBe("****");
+    // Every character, spaces included — the recording masks the same way.
+    expect(document.querySelector("[contenteditable]").textContent).toBe("**********");
+    // A checkbox has no typed value; its state is not a value and stays (a known gap, README).
+    expect(document.querySelector("input[type=checkbox]").hasAttribute("checked")).toBe(true);
+  });
+
   it("takes no hook action at all when the app named nothing", async () => {
     const domToBlob = vi.fn(async () => blobOf(10));
     await captureScreenshot({ load: async () => ({ domToBlob }), target: document.body });
@@ -163,6 +187,67 @@ describe("maskClonedPassword", () => {
     expect(maskClonedPassword(document.querySelector("textarea"))).toBe(false);
     expect(maskClonedPassword(document.createTextNode("x"))).toBe(false);
     expect(document.querySelector("input").getAttribute("value")).toBe("1240.00");
+  });
+});
+
+describe("maskClonedValue", () => {
+  const make = (html) => {
+    document.body.innerHTML = html;
+    return document.body.firstElementChild;
+  };
+
+  it("does nothing at all with maskAllInputs off", () => {
+    const el = make('<input type="text" value="Jane">');
+    expect(maskClonedValue(el, false)).toBe(false);
+    expect(el.getAttribute("value")).toBe("Jane");
+  });
+
+  it("masks the recording's input kinds and leaves the others alone", () => {
+    for (const type of ["text", "email", "number", "search", "tel", "url", "date"]) {
+      const el = make(`<input type="${type}" value="secret">`);
+      expect(maskClonedValue(el, true), type).toBe(true);
+      expect(el.getAttribute("value"), type).toBe("******");
+    }
+    const untyped = make('<input value="secret">'); // no type is a text input
+    expect(maskClonedValue(untyped, true)).toBe(true);
+    for (const type of ["checkbox", "radio", "submit", "button", "hidden", "file"]) {
+      const el = make(`<input type="${type}" value="keep">`);
+      expect(maskClonedValue(el, true), type).toBe(false);
+      expect(el.getAttribute("value"), type).toBe("keep");
+    }
+    expect(maskClonedValue(make('<input type="text">'), true)).toBe(false);
+  });
+
+  it("masks a textarea's text and its copied value, keeping the length", () => {
+    const el = make('<textarea value="two words">two words</textarea>');
+    expect(maskClonedValue(el, true)).toBe(true);
+    expect(el.textContent).toBe("*********");
+    expect(el.getAttribute("value")).toBe("*********");
+  });
+
+  it("masks every option of a select, text and value", () => {
+    const el = make(
+      '<select value="b"><option value="a">Alpha</option><option value="b">Beta</option></select>',
+    );
+    expect(maskClonedValue(el, true)).toBe(true);
+    expect([...el.options].map((o) => o.textContent)).toEqual(["*****", "****"]);
+    expect([...el.options].map((o) => o.getAttribute("value"))).toEqual(["*", "*"]);
+    expect(el.getAttribute("value")).toBe("*");
+  });
+
+  it("masks the text of an editable region, every text node, not a region that opted out", () => {
+    const el = make('<div contenteditable="true">a <i>b</i>\n c</div>');
+    expect(maskClonedValue(el, true)).toBe(true);
+    expect(el.textContent).toBe("******"); // every character, whitespace included, as rrweb does
+    const off = make('<div contenteditable="false">keep</div>');
+    expect(maskClonedValue(off, true)).toBe(false);
+    expect(off.textContent).toBe("keep");
+    expect(maskClonedValue(make("<p>plain</p>"), true)).toBe(false);
+  });
+
+  it("ignores text nodes and nothing", () => {
+    expect(maskClonedValue(document.createTextNode("x"), true)).toBe(false);
+    expect(maskClonedValue(null, true)).toBe(false);
   });
 });
 

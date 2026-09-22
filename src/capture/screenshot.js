@@ -22,6 +22,10 @@
 // region is readable.
 import { blankSelector } from "../selectors.js";
 import { warnOnce } from "../warn.js";
+import { EDITABLE_SELECTOR, MASKABLE_INPUTS } from "./replay.js";
+
+const MASKABLE = new Set(MASKABLE_INPUTS);
+const stars = (text) => "*".repeat(String(text).length);
 
 export const SCREENSHOT_MAX = 5 * 1024 * 1024;
 export const HOST_ID = "fbh-host";
@@ -86,11 +90,84 @@ export function maskClonedPassword(cloned) {
   }
 }
 
+// Under `maskAllInputs` the picture masks what the recording masks — every typed value, a
+// textarea's text, a select's chosen option, editable text — kind for kind (MASKABLE_INPUTS and
+// EDITABLE_SELECTOR are the recording's own lists), so a report cannot show in its picture what
+// it withholds in its recording. Owner's decision, 2026-09-22 (plan Q3.1): the screenshot used to
+// be the one part that showed typed values whatever the setting. Each value is replaced by the
+// same number of asterisks, so the field keeps its width and the layout stays recognisable.
+// modern-screenshot copies a field's live value onto the clone as a `value` attribute; a
+// textarea paints its text content and a select its options' text, so those are masked as well.
+export function maskClonedValue(cloned, maskAllInputs) {
+  if (!maskAllInputs || !cloned || cloned.nodeType !== 1) return false;
+  try {
+    const tag = cloned.tagName;
+    if (tag === "INPUT") {
+      const type = String(cloned.getAttribute("type") || "text").toLowerCase();
+      const value = cloned.getAttribute("value");
+      if (!MASKABLE.has(type) || !value) return false;
+      cloned.setAttribute("value", stars(value));
+      return true;
+    }
+    if (tag === "TEXTAREA") {
+      const value = cloned.getAttribute("value");
+      if (value) cloned.setAttribute("value", stars(value));
+      const text = cloned.textContent;
+      if (text) cloned.textContent = stars(text);
+      return !!(value || text);
+    }
+    if (tag === "SELECT") {
+      let masked = false;
+      const value = cloned.getAttribute("value");
+      if (value) {
+        cloned.setAttribute("value", stars(value));
+        masked = true;
+      }
+      // The chosen option's text is what the picture paints; its `value` is not painted but is in
+      // the clone the picture is drawn from, and there is no reason to keep it.
+      for (const option of cloned.querySelectorAll("option")) {
+        if (option.textContent) {
+          option.textContent = stars(option.textContent);
+          masked = true;
+        }
+        const optionValue = option.getAttribute("value");
+        if (optionValue) option.setAttribute("value", stars(optionValue));
+      }
+      return masked;
+    }
+    if (typeof cloned.matches === "function" && cloned.matches(EDITABLE_SELECTOR)) {
+      return maskTextNodes(cloned);
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function maskTextNodes(root) {
+  let masked = false;
+  const walk = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) {
+        if (child.nodeValue && child.nodeValue.trim()) {
+          child.nodeValue = stars(child.nodeValue);
+          masked = true;
+        }
+      } else if (child.nodeType === 1) {
+        walk(child);
+      }
+    }
+  };
+  walk(root);
+  return masked;
+}
+
 export async function captureScreenshot({
   load = () => import("modern-screenshot"),
   target = document.body,
   hostId = HOST_ID,
   blank = [],
+  maskAllInputs = false,
 } = {}) {
   try {
     const doc = (target && target.ownerDocument) || globalThis.document;
@@ -101,7 +178,8 @@ export async function captureScreenshot({
       timeout: 5000,
       filter: (node) => !(node && node.nodeType === 1 && node.id === hostId),
       onCloneEachNode: (cloned) => {
-        if (!hideBlanked(cloned, selector)) maskClonedPassword(cloned);
+        if (hideBlanked(cloned, selector)) return;
+        if (!maskClonedPassword(cloned)) maskClonedValue(cloned, maskAllInputs);
       },
     });
     if (!blob) return null;

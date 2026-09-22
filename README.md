@@ -107,8 +107,10 @@ Passwords are always masked in the replay and the click trail. `maskAllInputs: t
 typed value in both. `blank: [".sku-price"]` blanks matching elements in the replay
 (rrweb's `blockSelector`), withholds them from the click trail, and empties them in the screenshot
 — which the browser test checks by reading the sent picture back as pixels. The screenshot is a
-picture of what is on screen: it masks passwords and empties `blank` elements, and nothing else —
-a value typed into an ordinary field is in it, `maskAllInputs` or not. Request headers, cookies
+picture of what is on screen: it masks passwords, empties `blank` elements, and under
+`maskAllInputs: true` masks every typed value, a textarea's text, a select's chosen option and
+editable text — the same kinds the recording masks, so the picture cannot show what the recording
+withholds. A checkbox's state is not a value and stays in both. Request headers, cookies
 and query strings are never captured, and neither is a URL fragment that carries parameters
 (`#access_token=…`, where supabase-js's implicit flow lands a session); a plain route fragment
 (`#batch-12`) is kept. The rule is the shape, not a list of names, so a hash router's route with
@@ -129,7 +131,7 @@ replay's own first event, a masked snapshot taken by rrweb.
 
 The budget is what a dashboard downloads for this library on a page load: under **15 KB
 gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.1.0 is
-**11.3 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
+**11.6 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
 it). The panel — its markup, its list and its stylesheet, another 9.5 KB — is a chunk of its own,
 fetched the first time `open()` is called, which is why `open()` returns a promise. The two
 dependencies are chunks of their own too: the recorder is fetched on the first idle moment after

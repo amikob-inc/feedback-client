@@ -194,6 +194,7 @@ export function mountFeedback(rawOptions, deps = {}) {
       load: deps.loadScreenshot,
       target: doc.body,
       blank: options.capture.blank,
+      maskAllInputs: options.capture.maskAllInputs,
     });
   }
 

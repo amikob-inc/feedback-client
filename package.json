@@ -1,6 +1,6 @@
 {
   "name": "@amikob/feedback-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "In-app feedback panel for the amikob dashboards: capture buffers, session replay, screenshot and the report panel, framework-free",
   "license": "MIT",
   "repository": {

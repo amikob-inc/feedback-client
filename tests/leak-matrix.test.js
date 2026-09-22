@@ -260,6 +260,54 @@ describe("the automatic screenshot", () => {
       `\n${formatScan(run, { title: "screenshot" })}`,
     ).toEqual([]);
   });
+
+  // The other half of the same claim: with masking off the picture shows the values, which is
+  // what proves the masked run withheld them rather than a capture that had quietly lost every
+  // field. A withheld position satisfied by a broken picture would look exactly like a clean one.
+  describe("with maskAllInputs off", () => {
+    let unmasked;
+    beforeAll(async () => {
+      unmasked = scan(
+        await runCapture({
+          settings: { ...settings, maskAllInputs: false },
+          positions: screenshotPositions(),
+          interact: false,
+        }),
+      );
+      extraRuns["screenshot-unmasked"] = unmasked;
+    }, 120000);
+
+    it("shows every kind of field value, and still nothing the app blanked", () => {
+      for (const id of [
+        "screenshot/field-value/ordinary",
+        "screenshot/textarea/ordinary",
+        "screenshot/select/ordinary",
+        "screenshot/editable/ordinary",
+      ]) {
+        const one = unmasked.results.find((position) => position.position.id === id);
+        expect(one.fate.expect, id).toBe("published");
+        expect(
+          one.hits.map((hit) => hit.part),
+          id,
+        ).toContain("screenshot");
+      }
+      expect(unmasked.leaked.map((one) => one.position.id)).toEqual([]);
+      expect(unmasked.missing.map((one) => one.position.id)).toEqual([]);
+    });
+  });
+
+  it("masks every kind of field value under maskAllInputs, the same kinds the recording masks", () => {
+    for (const id of [
+      "screenshot/field-value/ordinary",
+      "screenshot/textarea/ordinary",
+      "screenshot/select/ordinary",
+      "screenshot/editable/ordinary",
+    ]) {
+      const one = run.results.find((position) => position.position.id === id);
+      expect(one.fate.expect, id).toBe("withheld");
+      expect(one.hits, id).toEqual([]);
+    }
+  });
 });
 
 function idsWithHits(run, predicate) {

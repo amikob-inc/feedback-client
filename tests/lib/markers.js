@@ -759,6 +759,49 @@ export function screenshotPositions() {
       where: "a password field's value, in ordinary page content",
       plant: typedValue("password"),
     }),
+    // The other kinds of field a browser paints a value into, each masked by the recording under
+    // maskAllInputs and, since 2026-09-22, by the picture as well.
+    position({
+      id: "screenshot/textarea/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "input-value",
+      where: "a textarea's text, in ordinary page content",
+      plant: (ctx) => {
+        const el = ctx.doc.createElement("textarea");
+        el.value = ctx.marker;
+        ctx.parent.appendChild(el);
+      },
+    }),
+    position({
+      id: "screenshot/select/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "input-value",
+      where: "a select's chosen option, in ordinary page content",
+      plant: (ctx) => {
+        const el = ctx.doc.createElement("select");
+        const option = ctx.doc.createElement("option");
+        option.value = ctx.marker;
+        option.textContent = ctx.marker;
+        el.appendChild(option);
+        el.value = ctx.marker;
+        ctx.parent.appendChild(el);
+      },
+    }),
+    position({
+      id: "screenshot/editable/ordinary",
+      group: "screenshot",
+      zone: "ordinary",
+      kind: "editable-text",
+      where: "text typed into a contenteditable region, in ordinary page content",
+      plant: (ctx) => {
+        const el = ctx.doc.createElement("div");
+        el.setAttribute("contenteditable", "true");
+        el.textContent = ctx.marker;
+        ctx.parent.appendChild(el);
+      },
+    }),
   ];
 }
 

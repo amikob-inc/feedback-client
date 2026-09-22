@@ -92,13 +92,9 @@ const MECHANISMS = [
 // and a field's raw `value=` when the live value is empty). Their positions assert `withheld` like
 // any other, which is what a closed gap looks like here.
 
-const GAPS = [
-  {
-    id: "screenshot-shows-what-is-on-screen",
-    match: (p) => p.id === "screenshot/field-value/ordinary",
-    why: "the automatic screenshot is a picture of what the reporter is looking at, and a field's typed value is on screen. maskAllInputs governs the recording; an app that needs a value kept out of the picture names it in capture.blank, which the screenshot now honours (report, finding F4)",
-  },
-];
+// The one gap the first report kept — a field's typed value in the automatic screenshot — closed
+// on 2026-09-22 (plan Q3.1): under maskAllInputs the picture masks what the recording masks.
+const GAPS = [];
 
 // --------------------------------------------------------------------------------------------
 
