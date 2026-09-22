@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>feedback-client demo</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --panel: #f6f6f9;
+        --text: #1b1b1f;
+        --muted: #5b5b66;
+        --accent: #1f4ed8;
+        --accent-on: #ffffff;
+      }
+      html[data-theme="dark"] {
+        --bg: #101014;
+        --panel: #1c1c22;
+        --text: #f2f2f5;
+        --muted: #a8a8b4;
+        --accent: #8ab4ff;
+        --accent-on: #101014;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        font:
+          14px/1.5 system-ui,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      /* How an app maps its own tokens onto the panel. An id selector written in the page beats
+         `:host` written inside the shadow root, and that is the only channel by which an app's
+         colours reach the panel: nothing else in this stylesheet can touch it. */
+      #fbh-host {
+        --fbh-bg: var(--bg);
+        --fbh-panel: var(--panel);
+        --fbh-text: var(--text);
+        --fbh-muted: var(--muted);
+        --fbh-accent: var(--accent);
+        --fbh-accent-on: var(--accent-on);
+        --fbh-font: system-ui, sans-serif;
+      }
+      button {
+        font: inherit;
+        padding: 6px 12px;
+      }
+      .bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      #dot {
+        min-width: 22px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: var(--panel);
+        text-align: center;
+      }
+      label {
+        display: block;
+        margin: 6px 0;
+      }
+      /* The region the demo names in `capture.blank`. It keeps its box in the screenshot (that is
+         what makes the picture still look like the page); what must not survive is anything
+         inside it — the text, and the image below. */
+      .secret {
+        margin: 12px 0;
+        padding: 10px;
+        border: 1px solid var(--muted);
+        border-radius: 8px;
+        max-width: 420px;
+      }
+      /* Two solid-colour blocks of the same size, one inside the blanked region and one outside,
+         so the sent screenshot can be read back as pixels: the outside colour must be in the
+         raster, the inside one must not. Drawn as images rather than backgrounds on purpose —
+         blanking takes an element's *content* away and leaves its box, so a background colour is
+         meant to survive and would prove nothing either way. */
+      .swatch {
+        display: block;
+        width: 160px;
+        height: 40px;
+      }
+      .filler {
+        margin-top: 24px;
+        height: 220vh;
+        border-top: 1px dashed var(--muted);
+      }
+      iframe {
+        width: 320px;
+        height: 90px;
+        border: 1px solid var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="page-title">feedback-client demo</h1>
+    <p id="intro">
+      A page to drive the panel by hand and in the browser test. It talks to the stub hub, never a
+      real one.
+    </p>
+    <p class="bar">
+      <button id="open-feedback" type="button">Report an issue</button>
+      <span id="dot" aria-label="reports needing attention">0</span>
+      <button id="toggle-theme" type="button">Toggle theme</button>
+      <button id="toggle-signin" type="button">Sign out</button>
+      <button id="host-click" type="button">Host button</button>
+      <span id="host-clicks">0</span>
+    </p>
+    <form id="demo-form" onsubmit="return false;">
+      <label>Ring name <input id="ring-name" value="Solitaire" /></label>
+      <label>Password <input id="secret-input" type="password" /></label>
+    </form>
+    <p id="public-text"></p>
+    <p><a id="token-link" href="#">A link with a token in its query string</a></p>
+    <img id="swatch-open" class="swatch" alt="visible swatch" />
+    <div class="secret">
+      <p id="blanked-text"></p>
+      <img id="swatch-blanked" class="swatch" alt="blanked swatch" />
+    </div>
+    <iframe id="child" title="same-origin child" src="./frame.html"></iframe>
+    <iframe id="child-srcdoc" title="srcdoc child"></iframe>
+    <div class="filler"></div>
+    <script type="module">
+      // Which entry to run: the sources straight from disk, or the bundle tools/build-demo.mjs
+      // produced. Only the bundle can resolve the two lazy dependencies' bare specifiers, so
+      // `?real=1` is the mode that exercises the real recorder and the real screenshot, and the
+      // default mode stands fakes in for them (see demo.js).
+      const real = new URLSearchParams(location.search).get("real") === "1";
+      import(real ? "./dist/demo.js" : "./demo.js").catch((error) => {
+        document.title = "demo failed to load";
+        console.error(error);
+      });
+    </script>
+  </body>
+</html>

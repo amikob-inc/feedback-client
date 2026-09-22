@@ -1,0 +1,618 @@
+/** @vitest-environment jsdom */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IMAGE_LOAD_TIMEOUT_MS } from "../src/panel/annotate.js";
+import { createForm } from "../src/panel/form.js";
+import { normalizeOptions } from "../src/options.js";
+import { CAPS } from "../src/bundle.js";
+
+const png = (size = 4) => new Blob([new Uint8Array(size)], { type: "image/png" });
+
+// Stands in for the real openAnnotator() the way `captureScreen` already lets a test stand in for
+// screen capture: jsdom can never actually finish opening the real dialog (see the "says so
+// instead of hanging" test below), so a test that needs to drive form.js's own annotate()/stop()
+// wrapper through a *working* dialog needs a controllable fake instead. Moving focus into a real,
+// attached element on open and removing it from the document on close mirrors the two real DOM
+// effects (openAnnotator's own `element.focus()`; close()'s own `removeChild`) that make focus
+// actually leave the triggering Draw button in the first place — without that, a test asserting
+// focus "returns" to the Draw button could pass even if it had never moved.
+function fakeAnnotatorDialog(doc, mount) {
+  const dialog = doc.createElement("div");
+  dialog.tabIndex = -1;
+  mount.appendChild(dialog);
+  dialog.focus();
+  return {
+    element: dialog,
+    close() {
+      if (dialog.isConnected) dialog.remove();
+    },
+  };
+}
+
+function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, openAnnotator } = {}) {
+  const options = normalizeOptions({
+    hubUrl: "https://hub.example",
+    app: "cad",
+    getToken: async () => "t",
+    section: () => "Mockups",
+    sections: ["Rendering", "Mockups", "Catalog (SKU)", "General"],
+    types: ["Bug", "Efficiency suggestion", "Question", "Other"],
+    ...extra,
+  });
+  const api = {
+    submit: vi.fn(async () => ({ id: "r1", dropped: [] })),
+    captureScreenshot: vi.fn(async () => png()),
+    // Resolved true by default: most of these tests assume a recorder that is up and running,
+    // matching the pre-F4 behaviour. The dedicated "What will be sent" tests below override this
+    // to exercise the pending/failed recorder cases.
+    replayReady: Promise.resolve(true),
+    options,
+    ...apiOverrides,
+  };
+  const onSubmitted = vi.fn();
+  const form = createForm({
+    api,
+    options,
+    doc: document,
+    win: window,
+    onSubmitted,
+    captureScreen,
+    openAnnotator,
+  });
+  document.body.appendChild(form.element);
+  return { api, form, onSubmitted, options };
+}
+
+const $ = (selector) => document.querySelector(selector);
+
+beforeEach(() => {
+  document.body.innerHTML = "";
+});
+
+describe("createForm", () => {
+  it("offers the app's sections and types, with the current view selected", async () => {
+    const { form } = setup();
+    await form.prepare();
+    expect([...$("#fbh-section").options].map((o) => o.value)).toEqual([
+      "Rendering",
+      "Mockups",
+      "Catalog (SKU)",
+      "General",
+    ]);
+    expect($("#fbh-section").value).toBe("Mockups");
+    expect($("#fbh-type").value).toBe("Bug");
+    form.destroy();
+  });
+
+  it("shows the automatic screenshot in the strip and lets it be removed", async () => {
+    const { form, api } = setup();
+    await form.prepare();
+    expect(api.captureScreenshot).toHaveBeenCalledTimes(1);
+    expect($(".fbh-strip").textContent).toContain("Screenshot");
+    $(".fbh-strip button[data-remove]").click();
+    expect($(".fbh-strip").textContent).not.toContain("Screenshot");
+    expect($(".fbh-note").textContent).toBe(
+      "What will be sent: a recording of the last minute or two, the console and network log.",
+    );
+    form.destroy();
+  });
+
+  it("retakes the screenshot on every prepare(), so a reopened panel reports on the page as it is now", async () => {
+    const { form, api } = setup();
+    await form.prepare();
+    expect(api.captureScreenshot).toHaveBeenCalledTimes(1);
+    // Simulate "opened, closed without sending, reopened": the screenshot from the first open is
+    // still attached (never removed, never submitted) when prepare() runs again.
+    await form.prepare();
+    expect(api.captureScreenshot).toHaveBeenCalledTimes(2);
+    form.destroy();
+  });
+
+  it("revokes the previous strip's object URLs when it rebuilds, so a reopened panel pins one screenshot, not one per open", async () => {
+    const made = [];
+    const revoked = [];
+    const create = URL.createObjectURL;
+    const revoke = URL.revokeObjectURL;
+    URL.createObjectURL = () => {
+      const url = `blob:test/${made.length}`;
+      made.push(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => revoked.push(url);
+    try {
+      const { form } = setup();
+      // Two attached images beside the screenshot, so every rebuild makes three URLs and the
+      // revoke loop is exercised over more than one. prepare() rebuilds the strip twice, before
+      // and after the capture; whatever the count, only the three on screen now may still be
+      // alive.
+      form.addImage(png(), "one.png");
+      form.addImage(png(), "two.png");
+      await form.prepare();
+      await form.prepare();
+      await form.prepare();
+      expect(made.length).toBeGreaterThan(3);
+      expect(revoked).toEqual(made.slice(0, -3));
+      form.destroy();
+      expect(revoked).toEqual(made);
+    } finally {
+      URL.createObjectURL = create;
+      URL.revokeObjectURL = revoke;
+    }
+  });
+
+  it("refuses an empty description without calling the hub", async () => {
+    const { form, api } = setup();
+    await form.prepare();
+    $("#fbh-submit").click();
+    await Promise.resolve();
+    expect(api.submit).not.toHaveBeenCalled();
+    expect($(".fbh-message").textContent).toBe("Add a description before sending.");
+    form.destroy();
+  });
+
+  it("submits everything it holds, then clears", async () => {
+    const { form, api, onSubmitted } = setup();
+    await form.prepare();
+    $("#fbh-text").value = "the popup does not open";
+    $("#fbh-type").value = "Question";
+    $("#fbh-no-replay").checked = true;
+    $("#fbh-no-replay").dispatchEvent(new window.Event("change"));
+    $("#fbh-submit").click();
+    await vi.waitFor(() => expect(api.submit).toHaveBeenCalledTimes(1));
+    expect(api.submit.mock.calls[0][0]).toMatchObject({
+      section: "Mockups",
+      type: "Question",
+      text: "the popup does not open",
+      includeReplay: false,
+    });
+    expect(onSubmitted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "r1", section: "Mockups", type: "Question" }),
+    );
+    expect($("#fbh-text").value).toBe("");
+    form.destroy();
+  });
+
+  it("keeps everything and offers Retry when the hub refuses, without the button polluting the announced message", async () => {
+    const api = {
+      submit: vi.fn(async () => {
+        throw Object.assign(new Error("Your session expired; sign in again."), { status: 401 });
+      }),
+    };
+    const { form } = setup({ api });
+    await form.prepare();
+    $("#fbh-text").value = "still here";
+    $("#fbh-submit").click();
+    await vi.waitFor(() =>
+      expect($(".fbh-message").textContent).toBe("Your session expired; sign in again."),
+    );
+    expect($("#fbh-text").value).toBe("still here");
+    expect($("#fbh-retry")).not.toBe(null);
+    $("#fbh-retry").click();
+    await vi.waitFor(() => expect(api.submit).toHaveBeenCalledTimes(2));
+    form.destroy();
+  });
+
+  it("never drops focus to <body> when Retry is activated", async () => {
+    const api = {
+      submit: vi.fn(async () => {
+        throw Object.assign(new Error("Your session expired; sign in again."), { status: 401 });
+      }),
+    };
+    const { form } = setup({ api });
+    await form.prepare();
+    $("#fbh-text").value = "still here";
+    $("#fbh-submit").click();
+    await vi.waitFor(() => expect($("#fbh-retry")).not.toBe(null));
+    $("#fbh-retry").focus();
+    expect(document.activeElement).toBe($("#fbh-retry"));
+    $("#fbh-retry").click();
+    // Synchronously, before the retried submit() even resolves: hideRetry() removes the button
+    // as the very first step of send(), and that is the moment focus can fall to <body>.
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe($(".fbh-message"));
+    await vi.waitFor(() => expect(api.submit).toHaveBeenCalledTimes(2));
+    form.destroy();
+  });
+
+  it("clears a stale Retry button when the reporter submits again with an empty description", async () => {
+    const api = {
+      submit: vi.fn(async () => {
+        throw Object.assign(new Error("The hub had a problem. Retry."), { status: 500 });
+      }),
+    };
+    const { form } = setup({ api });
+    await form.prepare();
+    $("#fbh-text").value = "will fail";
+    $("#fbh-submit").click();
+    await vi.waitFor(() => expect($("#fbh-retry")).not.toBe(null));
+    $("#fbh-text").value = "   ";
+    $("#fbh-submit").click();
+    await Promise.resolve();
+    expect($(".fbh-message").textContent).toBe("Add a description before sending.");
+    expect($("#fbh-retry")).toBe(null);
+    form.destroy();
+  });
+
+  it("says what was left out when the hub took the report but the bundle was trimmed", async () => {
+    const api = {
+      submit: vi.fn(async () => ({
+        id: "r2",
+        dropped: ["the recording (the bundle was too big)"],
+      })),
+    };
+    const { form } = setup({ api });
+    await form.prepare();
+    $("#fbh-text").value = "big one";
+    $("#fbh-submit").click();
+    await vi.waitFor(() =>
+      expect($(".fbh-message").textContent).toBe(
+        "Sent. Left out: the recording (the bundle was too big).",
+      ),
+    );
+    form.destroy();
+  });
+
+  it("takes a pasted image and refuses one that is not PNG or JPEG", async () => {
+    const { form } = setup();
+    await form.prepare();
+    const paste = new window.Event("paste");
+    paste.clipboardData = {
+      items: [
+        { kind: "file", type: "image/png", getAsFile: () => png() },
+        {
+          kind: "file",
+          type: "image/gif",
+          getAsFile: () => new Blob([new Uint8Array(2)], { type: "image/gif" }),
+        },
+      ],
+    };
+    document.dispatchEvent(paste);
+    await vi.waitFor(() => expect($(".fbh-strip").textContent).toContain("Image 1"));
+    expect($(".fbh-strip").textContent).not.toContain("Image 2");
+    expect($(".fbh-message").textContent).toBe("Only PNG and JPEG images can be attached.");
+    form.destroy();
+  });
+
+  it("stops at six images", async () => {
+    const { form } = setup();
+    await form.prepare();
+    for (let i = 0; i < 7; i += 1) form.addImage(png(), `shot-${i}.png`);
+    expect($(".fbh-strip").querySelectorAll("[data-image]")).toHaveLength(6);
+    expect($(".fbh-message").textContent).toBe("Six images is the most that can go with a report.");
+    form.destroy();
+  });
+
+  it("refuses an image over five megabytes", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage({ size: 6 * 1024 * 1024, type: "image/png" }, "huge.png");
+    expect($(".fbh-strip").querySelectorAll("[data-image]")).toHaveLength(0);
+    expect($(".fbh-message").textContent).toBe("That image is over 5 MB.");
+    form.destroy();
+  });
+
+  it("hides Capture screen where the browser has no getDisplayMedia, and uses it where it has", async () => {
+    const { form } = setup();
+    await form.prepare();
+    expect($("#fbh-capture")).toBe(null);
+    form.destroy();
+
+    document.body.innerHTML = "";
+    const captureScreen = vi.fn(async () => png(9));
+    const withApi = setup({
+      captureScreen,
+      options: {},
+    });
+    withApi.form.element.ownerDocument.defaultView.navigator.mediaDevices = {
+      getDisplayMedia() {},
+    };
+    await withApi.form.prepare();
+    expect($("#fbh-capture")).not.toBe(null);
+    $("#fbh-capture").click();
+    await vi.waitFor(() => expect(captureScreen).toHaveBeenCalledTimes(1));
+    expect($(".fbh-strip").textContent).toContain("Image 1");
+    withApi.form.destroy();
+    delete window.navigator.mediaDevices;
+  });
+
+  it("says something when the screen-capture picker is denied or dismissed, instead of doing nothing observable", async () => {
+    document.body.innerHTML = "";
+    const captureScreen = vi.fn(async () => null);
+    const { form } = setup({ captureScreen, options: {} });
+    form.element.ownerDocument.defaultView.navigator.mediaDevices = { getDisplayMedia() {} };
+    await form.prepare();
+    expect($("#fbh-capture")).not.toBe(null);
+    $("#fbh-capture").click();
+    await vi.waitFor(() => expect(captureScreen).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect($(".fbh-message").textContent).toBe("Screen capture wasn't added."),
+    );
+    expect($(".fbh-strip").textContent).not.toContain("Image 1");
+    form.destroy();
+    delete window.navigator.mediaDevices;
+  });
+
+  it("moves focus to the attachment that slides into the removed one's place", async () => {
+    const { form } = setup();
+    await form.prepare(); // strip: [Screenshot]
+    form.addImage(png(), "a.png"); // strip: [Screenshot, Image 1]
+    form.addImage(png(), "b.png"); // strip: [Screenshot, Image 1, Image 2]
+    const removeButtons = () => [...document.querySelectorAll(".fbh-strip [data-remove]")];
+    expect(removeButtons()).toHaveLength(3);
+    removeButtons()[0].focus();
+    removeButtons()[0].click(); // removes the screenshot, the first slot
+    const after = removeButtons();
+    expect(after).toHaveLength(2);
+    expect(document.activeElement).toBe(after[0]);
+    expect(document.activeElement.getAttribute("aria-label")).toBe("Remove Image 1");
+    form.destroy();
+  });
+
+  it("moves focus to Attach image when the last attachment is removed", async () => {
+    const api = { captureScreenshot: vi.fn(async () => null) };
+    const { form } = setup({ api });
+    await form.prepare(); // no screenshot: api.captureScreenshot resolves null
+    form.addImage(png(), "a.png"); // strip: [Image 1], the only attachment
+    const removeButton = $(".fbh-strip [data-remove]");
+    removeButton.focus();
+    removeButton.click();
+    expect($(".fbh-strip").querySelectorAll("[data-remove]")).toHaveLength(0);
+    expect(document.activeElement).toBe($("#fbh-attach"));
+    form.destroy();
+  });
+
+  it("shows a Draw button on every thumbnail", async () => {
+    const { form } = setup();
+    await form.prepare();
+    expect($(".fbh-strip button[data-draw]")).not.toBe(null);
+    form.addImage(png(), "one.png");
+    expect($(".fbh-strip [data-image] button[data-draw]")).not.toBe(null);
+    form.destroy();
+  });
+
+  // jsdom fires neither `load` nor `error` for an <img src="blob:...">  (confirmed by hand while
+  // building src/panel/annotate.js), so the real, non-injected openAnnotator() this click reaches
+  // can only ever resolve through annotate.js's own load timeout — not instantly. Fake timers
+  // stand in for the wait so the test doesn't really take IMAGE_LOAD_TIMEOUT_MS.
+  it("opens the pen on a thumbnail; when the image can't be decoded (as in this environment) it says so instead of hanging", async () => {
+    vi.useFakeTimers();
+    try {
+      const { form } = setup();
+      await form.prepare();
+      form.addImage(png(), "one.png");
+      const drawButton = $(".fbh-strip [data-image] button[data-draw]");
+      drawButton.focus();
+      drawButton.click();
+      // annotatorMount.hidden flips synchronously, before openAnnotator's image load even starts.
+      expect($(".fbh-annotator-mount").hidden).toBe(false);
+      await vi.advanceTimersByTimeAsync(IMAGE_LOAD_TIMEOUT_MS);
+      expect($(".fbh-message").textContent).toBe("That image could not be opened for drawing.");
+      expect($(".fbh-annotator-mount").hidden).toBe(true);
+      // Never dropped to <body>: with nothing to rebuild (the load failed before any Save), the
+      // Draw button the reporter activated is still exactly where it was.
+      expect(document.activeElement).toBe(drawButton);
+      form.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Exercises the real save-and-refocus path without going through the real (jsdom-broken) image
+  // loader: replaceImage() is annotate.js's onDone callback, called directly here the way
+  // openAnnotator's onSave would call it after a real Save.
+  it("keeps keyboard focus on the same Draw button after a drawing is saved back onto its image", async () => {
+    const { form } = setup();
+    await form.prepare(); // strip: [Screenshot]
+    form.addImage(png(), "one.png"); // strip: [Screenshot, Image 1]
+    const drawButtons = () => [...document.querySelectorAll(".fbh-strip [data-draw]")];
+    expect(drawButtons()).toHaveLength(2);
+    const imageId = $(".fbh-strip [data-image]").dataset.image;
+    drawButtons()[1].focus();
+    form.replaceImage(imageId, png(9));
+    const after = drawButtons();
+    expect(after).toHaveLength(2);
+    expect(document.activeElement).toBe(after[1]);
+    expect(document.activeElement.getAttribute("aria-label")).toBe("Draw on Image 1");
+    form.destroy();
+  });
+
+  it("does nothing for replaceImage() when the id no longer matches any attachment (already removed)", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    expect(() => form.replaceImage("not-a-real-id", png())).not.toThrow();
+    expect($(".fbh-strip").querySelectorAll("[data-image]")).toHaveLength(1);
+    form.destroy();
+  });
+
+  // The hub rejects the *whole* report when an image part is not image/png or image/jpeg (plan's
+  // Global Constraints §9), and addImage() already refuses a wrongly-typed or oversized attachment
+  // before it reaches the bundle — but a flattened drawing from the annotator skipped both checks
+  // and went straight onto the attachment. `toBlob` is asked for "image/png", but nothing enforces
+  // that it got one back, or that the result stayed under the cap: a large enough source image can
+  // easily produce a flattened PNG over 5 MB even though the source attachment was under it.
+  it("refuses a flattened drawing of the wrong type, leaving the original image untouched", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    const before = $(".fbh-strip [data-image] img").src;
+    const wrongType = new Blob([new Uint8Array(4)], { type: "image/gif" });
+    const imageId = $(".fbh-strip [data-image]").dataset.image;
+
+    form.replaceImage(imageId, wrongType);
+
+    expect($(".fbh-message").textContent).toBe(
+      "That drawing could not be attached: only PNG and JPEG images are allowed.",
+    );
+    expect($(".fbh-strip [data-image] img").src).toBe(before);
+    form.destroy();
+  });
+
+  it("refuses a flattened drawing over the 5 MB cap, leaving the original image untouched", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    const before = $(".fbh-strip [data-image] img").src;
+    const tooBig = new Blob([new Uint8Array(CAPS.image + 1)], { type: "image/png" });
+    const imageId = $(".fbh-strip [data-image]").dataset.image;
+
+    form.replaceImage(imageId, tooBig);
+
+    expect($(".fbh-message").textContent).toBe(
+      "That drawing is over 5 MB and could not be attached.",
+    );
+    expect($(".fbh-strip [data-image] img").src).toBe(before);
+    form.destroy();
+  });
+
+  it("refuses a flattened drawing applied to the screenshot just as it would to any other image, leaving the screenshot untouched", async () => {
+    // Exercises the real annotate()/openAnnotator() wrapper (unlike the two tests above, which
+    // call replaceImage() directly): openAnnotator is injectable the same way captureScreen
+    // already is, so this stands in a controllable dialog instead of the real one, which jsdom
+    // can never finish opening (see the "says so instead of hanging" test below).
+    const wrongType = new Blob([new Uint8Array(4)], { type: "image/gif" });
+    const openAnnotator = vi.fn(({ mount, onSave, onClose }) => {
+      const dialog = fakeAnnotatorDialog(document, mount);
+      onSave(wrongType); // mirrors annotate.js's own save(): onSave, then close() unconditionally
+      dialog.close();
+      onClose();
+      return Promise.resolve(dialog);
+    });
+    const { form } = setup({ openAnnotator });
+    await form.prepare(); // takes the automatic screenshot
+    const before = $(".fbh-strip img").src;
+    const drawButton = $(".fbh-strip [data-draw]");
+    drawButton.focus();
+
+    drawButton.click();
+
+    expect(openAnnotator).toHaveBeenCalledTimes(1);
+    expect($(".fbh-message").textContent).toBe(
+      "That drawing could not be attached: only PNG and JPEG images are allowed.",
+    );
+    expect($(".fbh-strip img").src).toBe(before);
+    // Nothing was rebuilt (the change was refused before renderStrip ran), so the Draw button the
+    // reporter activated is still exactly where it was — the same contract as Cancel and Escape
+    // below, reached here by a different route (a rejected save instead of no save at all).
+    expect(document.activeElement).toBe(drawButton);
+    form.destroy();
+  });
+
+  // Focus returning to the triggering Draw button on Cancel and on Escape was previously only
+  // ever demonstrated by driving annotate.js directly (tests/annotate.test.js), never through
+  // form.js's own annotate()/stop() wrapper — the one place that actually restores it. Cancel and
+  // Escape both close the real dialog the same way: close() calls onClose with no onSave ever
+  // having fired (tests/annotate.test.js proves each of those two real UI actions reaches close());
+  // that shared contract, onClose with nothing saved, is what this drives.
+  it("returns focus to the Draw button when the annotator closes without saving, as Cancel and Escape both do", async () => {
+    let closeDialog;
+    const openAnnotator = vi.fn(
+      ({ mount, onClose }) =>
+        new Promise((resolve) => {
+          const dialog = fakeAnnotatorDialog(document, mount);
+          closeDialog = () => {
+            dialog.close();
+            onClose();
+          };
+          resolve(dialog);
+        }),
+    );
+    const { form } = setup({ openAnnotator });
+    await form.prepare();
+    form.addImage(png(), "one.png");
+    const drawButton = $(".fbh-strip [data-image] button[data-draw]");
+    drawButton.focus();
+
+    drawButton.click();
+    expect(openAnnotator).toHaveBeenCalledTimes(1);
+    expect($(".fbh-annotator-mount").hidden).toBe(false);
+
+    closeDialog();
+
+    expect($(".fbh-annotator-mount").hidden).toBe(true);
+    expect(document.activeElement).toBe(drawButton);
+    form.destroy();
+  });
+
+  it("stops listening for pastes once released", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.release();
+    const paste = new window.Event("paste");
+    paste.clipboardData = { items: [{ kind: "file", type: "image/png", getAsFile: () => png() }] };
+    document.dispatchEvent(paste);
+    expect($(".fbh-strip").textContent).not.toContain("Image 1");
+    form.destroy();
+  });
+
+  // The app's own section() hook can throw for reasons outside this module's control (mount.js
+  // guards it the same way for exactly this reason). prepare() must still resolve and leave the
+  // dropdown on a sane default, not reject with an uncaught error that a caller (the panel shell)
+  // has no reason to expect and might not catch.
+  it("survives a throwing section() while preparing, and falls back to the last section", async () => {
+    const { form } = setup({
+      options: {
+        section: () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    await expect(form.prepare()).resolves.toBeUndefined();
+    expect($("#fbh-section").value).toBe("General");
+    form.destroy();
+  });
+});
+
+describe("the recording clause in 'What will be sent'", () => {
+  it("leaves the recording out while the recorder's real status is still unknown", async () => {
+    let resolveReady;
+    const replayReady = new Promise((resolve) => {
+      resolveReady = resolve;
+    });
+    const { form } = setup({ api: { replayReady } });
+    await form.prepare();
+    expect($(".fbh-note").textContent).not.toContain("a recording");
+    resolveReady(true);
+    await vi.waitFor(() =>
+      expect($(".fbh-note").textContent).toContain("a recording of the last minute or two"),
+    );
+    form.destroy();
+  });
+
+  it("never claims a recording once the recorder is confirmed to have failed to start", async () => {
+    const { form } = setup({ api: { replayReady: Promise.resolve(false) } });
+    await form.prepare();
+    // Give the already-settled promise's .then() a turn to run and re-render the note.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect($(".fbh-note").textContent).not.toContain("a recording");
+    form.destroy();
+  });
+
+  it("mentions the recording once it is confirmed, even if that happens after the strip last rendered", async () => {
+    let resolveReady;
+    const replayReady = new Promise((resolve) => {
+      resolveReady = resolve;
+    });
+    const { form } = setup({ api: { replayReady } });
+    await form.prepare();
+    // Nothing else touches the strip or the checkbox between prepare() and the recorder settling
+    // — the note still has to catch up on its own.
+    resolveReady(true);
+    await vi.waitFor(() =>
+      expect($(".fbh-note").textContent).toBe(
+        "What will be sent: a screenshot of this page, a recording of the last minute or two, the console and network log.",
+      ),
+    );
+    form.destroy();
+  });
+
+  it("still says nothing about a recording the reporter opted out of, even once the recorder is confirmed", async () => {
+    const { form } = setup({ api: { replayReady: Promise.resolve(true) } });
+    await form.prepare();
+    $("#fbh-no-replay").checked = true;
+    $("#fbh-no-replay").dispatchEvent(new window.Event("change"));
+    await Promise.resolve();
+    expect($(".fbh-note").textContent).not.toContain("a recording");
+    form.destroy();
+  });
+});

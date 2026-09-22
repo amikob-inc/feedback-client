@@ -1,0 +1,7 @@
+# pnpm reads its settings from this file, a single-package repository included. esbuild is the one
+# dependency allowed to run an install script: that script is how its platform binary is put in
+# place, and both the size budget and the demo bundle are built with it. Without this entry
+# `pnpm install` stops with ERR_PNPM_IGNORED_BUILDS rather than merely warning, so CI would not
+# get as far as running anything.
+allowBuilds:
+  esbuild: true
