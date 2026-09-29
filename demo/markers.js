@@ -41,4 +41,7 @@ export const MARKERS = {
 export const SWATCHES = {
   OPEN: [0, 170, 255],
   BLANKED: [255, 0, 170],
+  // At the bottom of the page, past the filler: in the picture only when the page was scrolled
+  // there, which is how the browser test tells a viewport capture from a whole-page one.
+  FAR: [170, 255, 0],
 };

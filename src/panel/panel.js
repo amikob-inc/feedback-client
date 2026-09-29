@@ -100,8 +100,13 @@ export function createPanel({ api, options, doc }) {
 
   function focusable(scope) {
     // No visibility test: jsdom has no layout, and everything inside the overlay is visible
-    // whenever the overlay itself is.
-    return [...scope.querySelectorAll(FOCUSABLE)].filter((node) => !node.hidden);
+    // whenever the overlay itself is — except what sits under a `hidden` attribute, its own or
+    // an ancestor's (a row's Delete confirmation waits inside a hidden block until asked for).
+    // A control the browser will not focus but the trap still counts as the last stop is a
+    // trap that never wraps: Tab walks out of the dialog on to the page behind it.
+    return [...scope.querySelectorAll(FOCUSABLE)].filter(
+      (node) => !node.hidden && !(typeof node.closest === "function" && node.closest("[hidden]")),
+    );
   }
 
   function onKeydown(event) {

@@ -179,6 +179,15 @@ padding: 6px 10px; border: 1px solid var(--fbh-border); border-radius: 7px; curs
 font: inherit; font-size: 11.5px; font-weight: 600; background: none; color: var(--fbh-text);
 }
 .fbh-inline { margin-left: 6px; }
+.fbh-danger {
+padding: 6px 10px; border: 1px solid var(--fbh-danger); border-radius: 7px; cursor: pointer;
+font: inherit; font-size: 11.5px; font-weight: 600; background: none; color: var(--fbh-danger);
+}
+.fbh-danger[disabled], .fbh-ghost[disabled] { opacity: 0.6; cursor: default; }
+.fbh-confirm { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; margin-top: 6px; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-confirm[hidden] { display: none; }
+.fbh-list-message { margin: 8px 0 0; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-list-message:empty { display: none; }
 .fbh-reports { padding-top: 12px; }
 .fbh-subhead { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--fbh-muted); }
 .fbh-empty { margin: 0; padding: 14px 0; text-align: center; font-size: 12.5px; color: var(--fbh-muted); }

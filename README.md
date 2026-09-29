@@ -52,8 +52,16 @@ Every function is called lazily, at open or at submit, so mounting reads no app 
 module can be imported in any order. An unknown option throws at mount, so a typo is found in
 development. `getToken` returning `null` disables submit with "Sign in to report".
 
-`mountFeedback` returns `{ open, close, submit(fields), list(), reply(id, text), retry(id), destroy }`.
-An app that wants its own UI can use those and never open the built-in panel.
+`mountFeedback` returns
+`{ open, close, submit(fields), list(), reply(id, text), retry(id), remove(id), destroy }`. An app
+that wants its own UI can use those and never open the built-in panel.
+
+`remove(id)` deletes one of the reporter's own reports. Whether it may go is the hub's call, sent
+with every listing as `canDelete` on the item (v0.2.0, hub D17): yes while no issue exists for it
+or its issue is still open with no fix under way — that issue is closed as not planned with it —
+and no once a fix is in progress or the issue is fixed or closed. The panel shows a Delete button
+exactly where the hub said yes, asks once in the row (naming the issue it will close), and takes
+the row away.
 
 `open()` returns a promise. The panel is loaded on demand — it is fetched the first time it is
 opened, never on page load — so the promise resolves once the panel is on the page, and code that
@@ -107,7 +115,9 @@ Passwords are always masked in the replay and the click trail. `maskAllInputs: t
 typed value in both. `blank: [".sku-price"]` blanks matching elements in the replay
 (rrweb's `blockSelector`), withholds them from the click trail, and empties them in the screenshot
 — which the browser test checks by reading the sent picture back as pixels. The screenshot is a
-picture of what is on screen: it masks passwords, empties `blank` elements, and under
+picture of what is on screen — the viewport as the reporter sees it, at their scroll position,
+never the page beyond it (v0.2.0; the whole-page walk froze the host page for seconds and often
+produced no picture at all, see `src/capture/viewport.js`): it masks passwords, empties `blank` elements, and under
 `maskAllInputs: true` masks every typed value, a textarea's text, a select's chosen option and
 editable text — at least what the recording masks, so the picture cannot show what the recording
 withholds; for a select the picture is stricter (the recording keeps the option list and masks
@@ -134,13 +144,14 @@ replay's own first event, a masked snapshot taken by rrweb.
 ## Size
 
 The budget is what a dashboard downloads for this library on a page load: under **15 KB
-gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.1.1 is
-**11.6 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
-it). The panel — its markup, its list and its stylesheet, another 9.5 KB — is a chunk of its own,
+gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.2.0 is
+**11.7 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
+it). The panel — its markup, its list and its stylesheet, another 9.8 KB — is a chunk of its own,
 fetched the first time `open()` is called, which is why `open()` returns a promise. The two
 dependencies are chunks of their own too: the recorder is fetched on the first idle moment after
-mount, the screenshot module when a screenshot is taken. `pnpm size` fails if any of the three
-becomes a static import.
+mount, the screenshot module when a screenshot is taken, and with it the library's own viewport
+module (1.7 KB, `src/capture/viewport.js`). `pnpm size` fails if any of the three becomes a
+static import.
 
 ## Develop
 

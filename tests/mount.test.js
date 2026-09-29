@@ -57,6 +57,7 @@ function fakeTransport(overrides = {}) {
       status: "triaging",
       label: "Received, being looked at",
     })),
+    remove: vi.fn(async () => ({ id: "report-1", deleted: true, issue: null })),
     ...overrides,
   };
 }
@@ -550,5 +551,33 @@ describe("open", () => {
     handle.destroy();
     await expect(handle.open()).resolves.toBeUndefined();
     expect(document.getElementById("fbh-host")).toBe(null);
+  });
+});
+
+describe("remove", () => {
+  it("passes the id to the transport and hands back the hub's answer", async () => {
+    const { handle, transport } = mount();
+    expect(await handle.remove("report-1")).toEqual({ id: "report-1", deleted: true, issue: null });
+    expect(transport.remove).toHaveBeenCalledWith("report-1");
+  });
+
+  it("is a no-op that resolves to null when the feature is off", async () => {
+    const handle = mountFeedback({ app: "cad" }, { doc: document });
+    expect(await handle.remove("report-1")).toBe(null);
+  });
+
+  it("lets the hub's refusal through as the error the panel shows", async () => {
+    const err = new Error("This report can no longer be deleted.");
+    const { handle } = mount(
+      {},
+      {
+        transport: fakeTransport({
+          remove: vi.fn(async () => {
+            throw err;
+          }),
+        }),
+      },
+    );
+    await expect(handle.remove("report-1")).rejects.toBe(err);
   });
 });

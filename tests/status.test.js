@@ -65,7 +65,7 @@ describe("the fixture shared with the hub", () => {
   it("has not drifted (the hub asserts the same digest)", () => {
     const canonical = JSON.stringify(JSON.parse(raw));
     expect(createHash("sha256").update(canonical).digest("hex")).toBe(
-      "9ff37288abe6669007d333429ea483a854bd843bdbd473b63254021db9baacab",
+      "52e424170124b5aac1d76e5e6202192dfedfccd86042fc10c327a7bf09ff374b",
     );
   });
 
@@ -86,6 +86,19 @@ describe("the fixture shared with the hub", () => {
       expect(statusTone(one.status)).not.toBe("");
       expect(isRetryable(one.status)).toBe(one.status === "waiting" || one.status === "error");
       expect(needsReply(one.status)).toBe(one.status === "needs_reply");
+    }
+  });
+});
+
+// The hub decides which reports may be deleted (its status.ts, `canDelete`) and says so per
+// listed item; the fixture carries that answer for every case so the panel's own reading of it
+// (list.js: a Delete button exactly where it is true) is checked against the same cases.
+describe("the fixture's canDelete", () => {
+  it("is a boolean on every case, false exactly for in_progress, fixed and closed", () => {
+    for (const one of fixture.cases) {
+      expect(typeof one.canDelete, one.name).toBe("boolean");
+      const blocked = ["in_progress", "fixed", "closed"].includes(one.status);
+      expect(`${one.name}: ${one.canDelete}`).toBe(`${one.name}: ${!blocked}`);
     }
   });
 });

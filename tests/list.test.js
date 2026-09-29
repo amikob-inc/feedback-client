@@ -56,6 +56,7 @@ function setup(apiOverrides = {}) {
       label: "Received, being looked at",
     })),
     markRead: vi.fn(),
+    remove: vi.fn(async () => ({ id: "r1", deleted: true, issue: null })),
     ...apiOverrides,
   };
   const list = createList({ api, options, doc: document, now });
@@ -190,6 +191,56 @@ describe("renderRow", () => {
       const row = renderRow(document, item({ status, label: "x" }), {}, { me: "me", now: now() });
       expect(row.querySelector("[data-retry]")).toBe(null);
     }
+  });
+
+  it("offers Delete exactly where the hub said canDelete, over every case in the shared fixture", () => {
+    for (const one of fixture.cases) {
+      const row = renderRow(
+        document,
+        item({ status: one.status, label: one.label, canDelete: one.canDelete }),
+        {},
+        { me: "me", now: now() },
+      );
+      expect(row.querySelector("[data-delete]") !== null, one.name).toBe(one.canDelete);
+    }
+    // An item the hub sent without the field (an older hub) gets no Delete.
+    const row = renderRow(document, item({ status: "triaging" }), {}, { me: "me", now: now() });
+    expect(row.querySelector("[data-delete]")).toBe(null);
+  });
+
+  it("asks before deleting, names the open issue that will be closed, and Keep puts the button back", () => {
+    const row = renderRow(
+      document,
+      item({
+        status: "filed",
+        label: "Filed as #7",
+        canDelete: true,
+        issue: { number: 7, url: "https://github.com/o/r/issues/7", state: "open" },
+      }),
+      {},
+      { me: "me", now: now() },
+    );
+    document.body.appendChild(row);
+    const confirm = row.querySelector(".fbh-confirm");
+    expect(confirm.hidden).toBe(true);
+    row.querySelector("[data-delete]").click();
+    expect(confirm.hidden).toBe(false);
+    expect(row.querySelector("[data-delete]").hidden).toBe(true);
+    expect(confirm.textContent).toContain("Delete this report and close issue #7?");
+    expect(document.activeElement).toBe(row.querySelector("[data-delete-confirm]"));
+    row.querySelector("[data-delete-cancel]").click();
+    expect(confirm.hidden).toBe(true);
+    expect(row.querySelector("[data-delete]").hidden).toBe(false);
+    expect(document.activeElement).toBe(row.querySelector("[data-delete]"));
+
+    const plain = renderRow(
+      document,
+      item({ status: "answered", label: "Answered", canDelete: true }),
+      {},
+      { me: "me", now: now() },
+    );
+    expect(plain.querySelector(".fbh-confirm").textContent).toContain("Delete this report?");
+    expect(plain.querySelector(".fbh-confirm").textContent).not.toContain("issue");
   });
 
   it("names someone else's reporter, and not your own", () => {
@@ -667,6 +718,82 @@ describe("createList", () => {
     expect(document.querySelector(".fbh-row-message").textContent).toContain(
       "Received, being looked at",
     );
+    list.destroy();
+  });
+
+  it("deletes a report after the confirmation, takes the row away and says so where focus lands", async () => {
+    const { list, api } = setup({
+      list: async () => ({
+        items: [
+          item({ id: "r1", canDelete: true }),
+          item({ id: "r2", text: "the other one", canDelete: false }),
+        ],
+        nextCursor: null,
+      }),
+    });
+    await list.refresh();
+    expect(document.querySelectorAll(".fbh-row")).toHaveLength(2);
+    document.querySelector('.fbh-row[data-id="r1"] [data-delete]').click();
+    document.querySelector('.fbh-row[data-id="r1"] [data-delete-confirm]').click();
+    await vi.waitFor(() => expect(api.remove).toHaveBeenCalledWith("r1"));
+    await vi.waitFor(() => expect(document.querySelectorAll(".fbh-row")).toHaveLength(1));
+    expect(document.querySelector('.fbh-row[data-id="r2"]')).not.toBe(null);
+    const note = document.querySelector(".fbh-list-message");
+    expect(note.textContent).toBe("Report deleted.");
+    // Not dropped to <body> with the button that was just pressed.
+    expect(document.activeElement).toBe(note);
+    list.destroy();
+  });
+
+  it("shows the hub's refusal in the row and leaves it deletable again", async () => {
+    const { list } = setup({
+      list: async () => ({ items: [item({ canDelete: true })], nextCursor: null }),
+      remove: async () => {
+        const err = new Error("This report can no longer be deleted.");
+        err.status = 409;
+        err.code = "not_deletable";
+        throw err;
+      },
+    });
+    await list.refresh();
+    document.querySelector("[data-delete]").click();
+    document.querySelector("[data-delete-confirm]").click();
+    await vi.waitFor(() =>
+      expect(document.querySelector(".fbh-row-message").textContent).toBe(
+        "This report can no longer be deleted.",
+      ),
+    );
+    expect(document.querySelectorAll(".fbh-row")).toHaveLength(1);
+    expect(document.querySelector("[data-delete-confirm]").disabled).toBe(false);
+    expect(document.querySelector("[data-delete-cancel]").disabled).toBe(false);
+    list.destroy();
+  });
+
+  it("does not send a second delete while the first is still in flight", async () => {
+    let resolveRemove;
+    const remove = vi.fn(() => new Promise((resolve) => (resolveRemove = resolve)));
+    const { list, api } = setup({
+      list: async () => ({ items: [item({ canDelete: true })], nextCursor: null }),
+      remove,
+    });
+    await list.refresh();
+    document.querySelector("[data-delete]").click();
+    const confirm = document.querySelector("[data-delete-confirm]");
+    confirm.click();
+    confirm.click();
+    expect(api.remove).toHaveBeenCalledTimes(1);
+    expect(confirm.disabled).toBe(true);
+    expect(document.querySelector(".fbh-row-message").textContent).toBe("Deleting…");
+    resolveRemove({ id: "r1", deleted: true, issue: null });
+    await vi.waitFor(() => expect(document.querySelectorAll(".fbh-row")).toHaveLength(0));
+    list.destroy();
+  });
+
+  it("puts a just-sent report at the top as deletable, the way the hub would list it", async () => {
+    const { list } = setup({ list: async () => ({ items: [], nextCursor: null }) });
+    await list.refresh();
+    list.addOptimistic({ id: "new", section: "Rendering", type: "Bug", text: "fresh" });
+    expect(document.querySelector('.fbh-row[data-id="new"] [data-delete]')).not.toBe(null);
     list.destroy();
   });
 

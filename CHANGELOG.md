@@ -3,6 +3,31 @@
 All notable changes to this package. Consumers install a git tag
 (`pnpm add github:amikob-inc/feedback-client#vX.Y.Z`), so every release is a tag and an entry here.
 
+## 0.2.0 — 2026-09-29
+
+- The automatic screenshot captures the **viewport**, not the page. Opening the panel used to
+  freeze the host page for seconds: modern-screenshot clones every element under `body`, copies
+  its computed style property by property (some six hundred, three times over for the two
+  pseudo-elements) in one task that never yields, then rasterises the whole page — measured on
+  cad-dashboard's Rings view as 17 s of clone and 7 s of raster for 60 cards on a slow machine,
+  growing with the page, and ending in a blank picture because the SVG did not decode inside the
+  library's five-second wait. Now every element outside the viewport keeps its box and loses its
+  subtree, the picture is the window's size at the reporter's scroll position, a scrolled
+  container inside the page is shifted the same way, and only the properties that shape and paint
+  a box are copied (`src/capture/viewport.js`, loaded with the screenshot module, never on page
+  load). Same page, both levers: a 13× shorter stall, and a cost that no longer grows with the
+  page. Where there is no layout at all (jsdom) the whole page is captured as before.
+- **Delete** in "My reports" (`remove(id)` on the headless API): a Delete button exactly where the
+  hub's listing says `canDelete` — no issue yet, or an open issue with no fix under way — asks
+  once in the row, naming the open issue that will be closed with it, then sends
+  `DELETE /v1/reports/:id` and takes the row away; the confirmation and keyboard focus land on
+  the list's own live region. A refusal (`409 not_deletable`, once a fix is in progress or the
+  issue is fixed or closed) is shown in the row. A just-sent report is deletable at once, as the
+  hub would list it. Needs feedback-hub with D17 (2026-09-29).
+- `fixtures/status-cases.json` carries `canDelete` per case; the digest changes here and in the
+  hub.
+- Page load: 11.7 KB gzipped; the panel 9.8 KB; the new viewport module 1.7 KB on demand.
+
 ## 0.1.1 — 2026-09-22
 
 - `maskAllInputs: true` now masks the automatic screenshot as well: every typed value (any input

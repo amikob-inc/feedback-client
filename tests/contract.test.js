@@ -42,7 +42,7 @@ describe("the contract shared with the hub", () => {
   it("has not drifted (the hub asserts the same digest)", () => {
     const canonical = JSON.stringify(JSON.parse(raw));
     expect(createHash("sha256").update(canonical).digest("hex")).toBe(
-      "ef3f5a3ff6d6b15e7fa1a7bd49f22d977a6cf591d290c956961077886cbad398",
+      "535c6a5352da704666d7a6fe512692ab3ddf7214f75d624b80aac38d869c02c0",
     );
   });
 
@@ -62,6 +62,7 @@ describe("the contract shared with the hub", () => {
       contract.reply.body,
     );
     expect(await transportAnswering(contract.retry).retry("r1")).toEqual(contract.retry.body);
+    expect(await transportAnswering(contract.remove).remove("r1")).toEqual(contract.remove.body);
   });
 
   it("turns each of the hub's errors into its status and code", async () => {
@@ -85,6 +86,8 @@ describe("the contract shared with the hub", () => {
       forbidden: "That report is not yours to open.",
       unknownReport: "That report is gone.",
       notRetryable: "This report has already moved on.",
+      notDeletable: "This report can no longer be deleted.",
+      githubError: "The hub had a problem. Retry.",
       rateLimited: "You have sent a lot of reports this hour. Try again later.",
       tooManyReplies: "This report has all the replies it can take.",
       invalidText: "Add a description before sending.",
@@ -136,6 +139,12 @@ describe("the contract shared with the hub", () => {
     expect(byStatus("waiting").querySelector(".fbh-replies li").textContent).toContain(
       waiting.replies[0].text,
     );
+    // Delete exactly where the hub said so.
+    for (const item of items) {
+      const row = renderRow(document, item, {}, { me: item.reporter.id, now: new Date(item.at) });
+      expect(row.querySelector("[data-delete]") !== null, item.status).toBe(item.canDelete);
+    }
+    expect(inProgress.querySelector("[data-delete]")).toBe(null);
   });
 
   it("draws a degraded report from the hub's fallback", () => {

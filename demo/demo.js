@@ -50,6 +50,7 @@ document.getElementById("token-link").href =
   `${location.origin}/demo/somewhere?token=${MARKERS.TOKEN}#anchor`;
 document.getElementById("swatch-open").src = swatch(SWATCHES.OPEN);
 document.getElementById("swatch-blanked").src = swatch(SWATCHES.BLANKED);
+document.getElementById("swatch-far").src = swatch(SWATCHES.FAR);
 document.getElementById("child-srcdoc").srcdoc =
   `<!doctype html><p>Inside a srcdoc frame: ${MARKERS.SRCDOC}</p><!-- ${MARKERS.SRCDOC_HIDDEN} -->`;
 

@@ -141,6 +141,8 @@ export interface ReportSummary {
   status: Status;
   /** The hub's own label for this status. The panel shows this, never one computed locally. */
   label: string;
+  /** Whether `remove(id)` would be accepted right now. The panel shows Delete from this alone. */
+  canDelete?: boolean;
   verdict: Verdict | null;
   issue?: { number: number; url: string; state: "open" | "closed" };
   pullRequest?: { number: number; url: string; state: "open" | "closed"; merged: boolean };
@@ -163,6 +165,16 @@ export interface FeedbackHandle {
   list(): Promise<{ items: ReportSummary[]; nextCursor: string | null }>;
   reply(id: string, text: string): Promise<unknown>;
   retry(id: string): Promise<unknown>;
+  /**
+   * Deletes one of the reporter's own reports; a filed issue that is still open is closed with
+   * it. The hub refuses (409) once a fix is in progress or the issue is fixed or closed. Resolves
+   * to null when the feature is off.
+   */
+  remove(id: string): Promise<{
+    id: string;
+    deleted: true;
+    issue: { number: number; closed: boolean } | null;
+  } | null>;
   destroy(): void;
 }
 

@@ -97,6 +97,9 @@ function inertHandle() {
     async retry() {
       return null;
     },
+    async remove() {
+      return null;
+    },
     destroy: noop,
   };
 }
@@ -277,6 +280,13 @@ export function mountFeedback(rawOptions, deps = {}) {
     return transport.retry(id);
   }
 
+  // Deletes a report of the reporter's own (the hub decides whether it still can: an open filed
+  // issue is closed with it, a fix in progress or a finished one refuses). The next listing no
+  // longer has it; the panel takes the row away itself.
+  function remove(id) {
+    return transport.remove(id);
+  }
+
   // One load at a time: a reporter who clicks twice while the chunk is on its way must get one
   // panel, not two hosts on the page each polling the hub. A load that fails is forgotten rather
   // than cached, so the next open() tries the network again.
@@ -346,8 +356,8 @@ export function mountFeedback(rawOptions, deps = {}) {
     buffers.uninstall();
   }
 
-  const handle = { open, close, submit, list, reply, retry, destroy };
-  // What the panel gets: the same seven functions plus the three it alone needs.
+  const handle = { open, close, submit, list, reply, retry, remove, destroy };
+  // What the panel gets: the same eight functions plus the three it alone needs.
   const internal = { ...handle, markRead, captureScreenshot: captureNow, replayReady, options };
 
   if (button) button.addEventListener("click", onButtonClick);

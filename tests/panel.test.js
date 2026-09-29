@@ -166,6 +166,43 @@ describe("createPanel", () => {
     panel.destroy();
   });
 
+  // A control inside a hidden block — a row's Delete confirmation before it is asked for — is
+  // one the browser will not focus; a trap that still counted it as the last stop would never
+  // wrap, and Tab would walk out of the dialog on to the page (found by the browser test once
+  // the list grew such blocks).
+  it("wraps Tab past controls inside a hidden block", () => {
+    const { panel } = setup();
+    panel.open();
+    const root = shadow();
+    const ghost = document.createElement("div");
+    ghost.hidden = true;
+    ghost.innerHTML = `<button id="ghost">never</button>`;
+    root.querySelector(".fbh-body").appendChild(ghost);
+    const visible = [...root.querySelectorAll("button, select, textarea, input, a[href]")].filter(
+      (node) => !node.hidden && !node.closest("[hidden]"),
+    );
+    const first = visible[0];
+    const last = visible[visible.length - 1];
+    last.focus();
+    root
+      .querySelector(".fbh-overlay")
+      .dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+      );
+    expect(root.activeElement).toBe(first);
+    first.focus();
+    root.querySelector(".fbh-overlay").dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(root.activeElement).toBe(last);
+    panel.destroy();
+  });
+
   // theme() is an app hook (spec §5.4), and the library may never break the host
   // application"): a throw, or a value that is not literally "dark", must fall back to light
   // rather than take the panel down. A naive `options.theme() === "dark"` with no guard fails

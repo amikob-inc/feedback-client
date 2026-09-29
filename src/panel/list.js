@@ -216,6 +216,70 @@ export function renderRow(doc, item, handlers = {}, { me = null, now = new Date(
       row.appendChild(retryButton);
     }
 
+    // Delete, where the hub says it would accept one (`canDelete` on the item — the rule lives
+    // in the hub's status.ts and is never re-derived here). Two steps in the row itself, no
+    // window.confirm: the first press swaps the button for a question that says what will
+    // happen (the filed issue is closed too), the second press sends it. Keep puts the button
+    // back and focus with it.
+    if (item.canDelete === true) {
+      const openIssue =
+        item.issue && item.issue.state === "open" && typeof item.issue.number === "number"
+          ? item.issue.number
+          : null;
+      const confirmButton = el(doc, "button", {
+        type: "button",
+        class: "fbh-danger fbh-inline",
+        "data-delete-confirm": true,
+        text: "Delete",
+        onClick: () => {
+          if (!handlers.onDelete || confirmButton.disabled) return;
+          handlers.onDelete(item.id, {
+            message,
+            setBusy: (busy) => {
+              if (busy && activeWithin(row)) message.focus();
+              confirmButton.disabled = busy;
+              keepButton.disabled = busy;
+            },
+          });
+        },
+      });
+      const keepButton = el(doc, "button", {
+        type: "button",
+        class: "fbh-ghost fbh-inline",
+        "data-delete-cancel": true,
+        text: "Keep",
+        onClick: () => {
+          confirm.hidden = true;
+          deleteButton.hidden = false;
+          message.textContent = "";
+          deleteButton.focus();
+        },
+      });
+      const confirm = el(doc, "div", { class: "fbh-confirm", hidden: true }, [
+        el(doc, "span", {
+          text:
+            openIssue !== null
+              ? `Delete this report and close issue #${openIssue}?`
+              : "Delete this report?",
+        }),
+        confirmButton,
+        keepButton,
+      ]);
+      const deleteButton = el(doc, "button", {
+        type: "button",
+        class: "fbh-ghost fbh-inline",
+        "data-delete": true,
+        text: "Delete",
+        onClick: () => {
+          deleteButton.hidden = true;
+          confirm.hidden = false;
+          confirmButton.focus();
+        },
+      });
+      row.appendChild(deleteButton);
+      row.appendChild(confirm);
+    }
+
     row.appendChild(message);
     return row;
   } catch (err) {
@@ -238,11 +302,21 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     "aria-live": "polite",
     text: EMPTY_TEXT,
   });
+  // The list's own live region, for what a row can no longer say once it is gone: a deleted
+  // report's confirmation lands here, and so does keyboard focus, which would otherwise drop to
+  // <body> — outside the shadow root and the dialog's focus trap — with the button it was on.
+  const note = el(doc, "p", {
+    class: "fbh-list-message",
+    role: "status",
+    "aria-live": "polite",
+    "aria-atomic": "true",
+    tabindex: "-1",
+  });
   const element = el(
     doc,
     "section",
     { class: "fbh-reports", "aria-labelledby": "fbh-reports-heading" },
-    [heading, empty, listEl],
+    [heading, empty, listEl, note],
   );
 
   let items = [];
@@ -258,7 +332,7 @@ export function createList({ api, options, doc, now = () => new Date() }) {
   }
 
   function handlers() {
-    return { onReply, onRetry };
+    return { onReply, onRetry, onDelete };
   }
 
   // A row a colleague is in the middle of using must survive a rebuild untouched: their own
@@ -400,6 +474,25 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     }
   }
 
+  async function onDelete(id, ctx) {
+    ctx.message.textContent = "Deleting…";
+    ctx.setBusy(true);
+    try {
+      await api.remove(id);
+      items = items.filter((one) => one.id !== id);
+      // Focus leaves the row before the row leaves the list: render() keeps a row that holds
+      // focus (isMidEdit), and a focused node that is removed drops focus to <body>.
+      note.textContent = "Report deleted.";
+      note.focus();
+      const row = rowNode(id);
+      if (row) row.remove();
+      render();
+    } catch (err) {
+      ctx.message.textContent = err && err.message ? err.message : "Couldn't send, retry.";
+      ctx.setBusy(false);
+    }
+  }
+
   async function refresh() {
     try {
       const page = await api.list();
@@ -434,6 +527,9 @@ export function createList({ api, options, doc, now = () => new Date() }) {
         reporter: { id: me(), name: "" },
         status: "triaging",
         label: statusLabel("triaging", {}),
+        // What the hub would say for a report it has only just received (its status fixture:
+        // triaging may be deleted), so the row can be withdrawn before the first poll lands.
+        canDelete: true,
         verdict: null,
         replies: [],
       },
@@ -451,6 +547,7 @@ export function createList({ api, options, doc, now = () => new Date() }) {
   function stop() {
     if (timer !== null) clearInterval(timer);
     timer = null;
+    note.textContent = "";
   }
 
   function destroy() {

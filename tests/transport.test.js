@@ -87,6 +87,31 @@ describe("createTransport", () => {
     expect(fetchImpl.mock.calls[1][0]).toBe("https://hub.example/v1/reports/id%201/retry?app=cad");
   });
 
+  it("deletes with the DELETE method on the report's own route, with ?app=", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: "id 1", deleted: true, issue: null }), { status: 200 }),
+    );
+    const transport = createTransport({
+      hubUrl: "https://hub.example/",
+      app: "cad",
+      getToken: async () => "t",
+      fetch: fetchImpl,
+    });
+    const answer = await transport.remove("id 1");
+    expect(answer).toEqual({ id: "id 1", deleted: true, issue: null });
+    expect(fetchImpl.mock.calls[0][0]).toBe("https://hub.example/v1/reports/id%201?app=cad");
+    expect(fetchImpl.mock.calls[0][1].method).toBe("DELETE");
+    expect(fetchImpl.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer t" });
+  });
+
+  it("says why a delete was refused", () => {
+    expect(messageFor(409, "not_deletable", "report x is fixed")).toBe(
+      "This report can no longer be deleted.",
+    );
+    expect(messageFor(502, "github_error", "")).toBe("The hub had a problem. Retry.");
+  });
+
   it("refuses to call at all without a token", async () => {
     const fetchImpl = vi.fn();
     await expect(transportWith(fetchImpl, { token: null }).list()).rejects.toMatchObject({

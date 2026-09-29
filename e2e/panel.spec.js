@@ -126,7 +126,7 @@ async function screenshotPixels(page) {
       ctx.drawImage(bitmap, 0, 0);
       const data = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
       const near = (a, b) => Math.abs(a - b) <= 6;
-      const counts = { open: 0, blanked: 0, white: 0 };
+      const counts = { open: 0, blanked: 0, far: 0, white: 0 };
       for (let i = 0; i < data.length; i += 4) {
         const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
         if (near(r, swatches.OPEN[0]) && near(g, swatches.OPEN[1]) && near(b, swatches.OPEN[2])) {
@@ -138,6 +138,9 @@ async function screenshotPixels(page) {
           near(b, swatches.BLANKED[2])
         ) {
           counts.blanked += 1;
+        }
+        if (near(r, swatches.FAR[0]) && near(g, swatches.FAR[1]) && near(b, swatches.FAR[2])) {
+          counts.far += 1;
         }
         if (r === 255 && g === 255 && b === 255) counts.white += 1;
       }
@@ -238,6 +241,50 @@ test("shows every status the hub can send", async ({ page }) => {
   expect(noise).toEqual([]);
 });
 
+test("deletes a report after asking once, and offers no Delete under a fix", async ({ page }) => {
+  const noise = watchConsole(page);
+  await ready(page);
+  await page.click("#open-feedback");
+  await expect(page.locator(".fbh-row")).toHaveCount(23);
+  // Deletable, and filed against an open issue, so the question names the issue it will close.
+  const row = page.locator(".fbh-row", { hasText: "filed, open issue with no fix activity" });
+  await expect(row.locator("[data-delete]")).toBeVisible();
+  await row.locator("[data-delete]").click();
+  await expect(row.locator(".fbh-confirm")).toContainText("Delete this report and close issue #7?");
+  expect(await focusSpot(page)).toEqual({ outer: "host", inner: "fbh-danger fbh-inline" });
+  await row.locator("[data-delete-cancel]").click();
+  await expect(row.locator(".fbh-confirm")).toBeHidden();
+  expect(await focusSpot(page)).toEqual({ outer: "host", inner: "fbh-ghost fbh-inline" });
+
+  await row.locator("[data-delete]").click();
+  await row.locator("[data-delete-confirm]").click();
+  await expect(row).toHaveCount(0);
+  await expect(page.locator(".fbh-row")).toHaveCount(22);
+  await expect(page.locator(".fbh-list-message")).toHaveText("Report deleted.");
+  // The button that was pressed is gone with its row; focus is on the confirmation, inside the
+  // dialog, not on <body>.
+  expect(await focusSpot(page)).toEqual({ outer: "host", inner: "fbh-list-message" });
+
+  // A fix in progress, a fixed and a closed issue: no Delete at all.
+  for (const name of [
+    "filed, open issue labelled ai-working",
+    "filed, issue closed as completed",
+    "filed, issue closed as not planned",
+  ]) {
+    await expect(page.locator(".fbh-row", { hasText: name }).locator("[data-delete]")).toHaveCount(
+      0,
+    );
+  }
+
+  // Gone for good: the next listing (a reload) no longer has it.
+  await page.reload();
+  await page.waitForFunction(() => window.demoReady === true);
+  await page.click("#open-feedback");
+  await expect(page.locator(".fbh-row")).toHaveCount(22);
+  await expect(row).toHaveCount(0);
+  expect(noise).toEqual([]);
+});
+
 test("answers a question and retries a failed triage", async ({ page }) => {
   await ready(page);
   await page.click("#open-feedback");
@@ -295,11 +342,20 @@ test("keeps the keyboard inside the dialog and gives focus back on Escape", asyn
   const where = () => focusSpot(page);
   expect(await where()).toEqual({ outer: "host", inner: "fbh-close" });
 
-  // Round the trap several times over: every stop must still be inside the shadow root, and the
-  // sequence must come back round rather than run out. A trap that let go once in twenty presses
-  // would pass a single Tab.
+  // Round the trap more than once over: every stop must still be inside the shadow root, and the
+  // sequence must come back round rather than run out. A trap that let go once in a round would
+  // pass a single Tab. The round's length is counted, not assumed: the list's rows carry Reply,
+  // Retry and Delete controls, and how many there are is the fixture's business.
+  const focusables = await page.evaluate(
+    () =>
+      document
+        .getElementById("fbh-host")
+        .shadowRoot.querySelectorAll(
+          'button:not([disabled]):not([hidden]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ).length,
+  );
   const stops = [];
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < focusables + 3; i += 1) {
     await page.keyboard.press("Tab");
     const spot = await where();
     expect(spot.outer).toBe("host");
@@ -726,9 +782,34 @@ test.describe("with the real recorder and the real screenshot", () => {
     // the app named in `capture.blank` and one is not.
     expect(raster.counts.open).toBeGreaterThan(5000);
     expect(raster.counts.blanked).toBe(0);
+    // The swatch at the bottom of the page is not on screen at the top, so it is not in the
+    // picture: the capture is of the viewport, not the page.
+    expect(raster.counts.far).toBe(0);
     // The panel itself is not in its own screenshot: its backdrop is black at 42%, so a picture
     // that had caught it would have almost no pure white left in it.
     expect(raster.counts.white).toBeGreaterThan(raster.pixels * 0.5);
+  });
+
+  test("captures the viewport at the reporter's scroll position, not the whole page", async ({
+    page,
+  }) => {
+    await ready(page, { real: "1" });
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    // Through the API: the button is at the top of the page and clicking it would scroll there.
+    await page.evaluate(() => window.feedback.open());
+    await expect(page.locator(".fbh-panel")).toBeVisible();
+    await expect(page.locator(".fbh-thumb figcaption").first()).toHaveText("Screenshot");
+    await page.fill("#fbh-text", "the bottom of the page");
+    await page.click("#fbh-submit");
+    await expect(page.locator(".fbh-row").first()).toContainText("the bottom of the page");
+
+    const raster = await screenshotPixels(page);
+    const viewport = page.viewportSize();
+    expect([raster.width, raster.height]).toEqual([viewport.width, viewport.height]);
+    // What was on screen is in the picture; what was scrolled away is not.
+    expect(raster.counts.far).toBeGreaterThan(5000);
+    expect(raster.counts.open).toBe(0);
+    expect(raster.counts.blanked).toBe(0);
   });
 
   test("records a child document without carrying its secrets out", async ({ page, request }) => {
