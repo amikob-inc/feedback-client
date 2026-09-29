@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CAPS } from "../src/bundle.js";
 import { FeedbackError, createTransport } from "../src/transport.js";
 import { renderRow } from "../src/panel/list.js";
+import { attentionIds, markSeen } from "../src/seen.js";
 
 // Read by path, not `new URL(..., import.meta.url)`: under jsdom Vite rewrites that literal
 // pattern to an http:// asset URL (see tests/list.test.js).
@@ -41,7 +42,7 @@ describe("the contract shared with the hub", () => {
   it("has not drifted (the hub asserts the same digest)", () => {
     const canonical = JSON.stringify(JSON.parse(raw));
     expect(createHash("sha256").update(canonical).digest("hex")).toBe(
-      "0aa4da351dde25ee3c4590bc301e044a467610f04d002a1caae61ba399956fc5",
+      "ef3f5a3ff6d6b15e7fa1a7bd49f22d977a6cf591d290c956961077886cbad398",
     );
   });
 
@@ -54,6 +55,9 @@ describe("the contract shared with the hub", () => {
       contract.submit.body,
     );
     expect(await transportAnswering(contract.list).list()).toEqual(contract.list.body);
+    const page = await transportAnswering(contract.listPage).list({ limit: 1 });
+    expect(page).toEqual(contract.listPage.body);
+    expect(typeof page.nextCursor).toBe("string");
     expect(await transportAnswering(contract.reply).reply("r1", "more")).toEqual(
       contract.reply.body,
     );
@@ -72,12 +76,39 @@ describe("the contract shared with the hub", () => {
     }
   });
 
-  it("names the part a 413 refused, so the reporter knows what to leave out", async () => {
-    const error = await transportAnswering(contract.errors.tooLarge)
-      .submit(new FormData())
-      .catch((err) => err);
-    expect(error.part).toBe("screenshot");
-    expect(error.message).toBe("That is too big to send. Leave the screenshot out and try again.");
+  it("tells the reporter what each of the hub's errors means", async () => {
+    const expected = {
+      unauthorized: "Your session expired; sign in again.",
+      anonymousSession: "That report is not yours to open.",
+      origin: "This site is not allowed to send reports.",
+      unknownApp: "This app is not set up in the feedback hub yet.",
+      forbidden: "That report is not yours to open.",
+      unknownReport: "That report is gone.",
+      notRetryable: "This report has already moved on.",
+      rateLimited: "You have sent a lot of reports this hour. Try again later.",
+      tooManyReplies: "This report has all the replies it can take.",
+      invalidText: "Add a description before sending.",
+      invalidReplyText: "Add a description before sending.",
+      invalidImage: "Only PNG and JPEG images can be attached.",
+      invalidReport: "The hub could not read that report.",
+      tooLargeReport: "That is too big to send. Leave the report itself out and try again.",
+      tooLargeScreenshot: "That is too big to send. Leave the screenshot out and try again.",
+      tooLargeReplay: "That is too big to send. Leave the recording out and try again.",
+      tooLargeImage: "That is too big to send. Leave an image out and try again.",
+      tooManyImages: "That is too big to send. Leave an image out and try again.",
+      tooLargeBundle: "That is too big to send. Leave some of the attachments out and try again.",
+      tooLargeRequest: "That is too big to send. Leave some of the attachments out and try again.",
+    };
+    expect(Object.keys(contract.errors).sort()).toEqual(Object.keys(expected).sort());
+    for (const [name, exchange] of Object.entries(contract.errors)) {
+      const error = await transportAnswering(exchange)
+        .submit(new FormData())
+        .catch((err) => err);
+      expect(`${name}: ${error.message}`).toBe(`${name}: ${expected[name]}`);
+      if (exchange.status === 413) {
+        expect(`${name}: ${error.part}`).toBe(`${name}: ${exchange.body.message.split(" ")[0]}`);
+      }
+    }
   });
 
   it("draws every listed report, with the hub's label on its pill", () => {
@@ -101,7 +132,10 @@ describe("the contract shared with the hub", () => {
     expect(byStatus("answered").querySelector(".fbh-answer").textContent).not.toBe("");
     expect(byStatus("needs_reply").querySelectorAll(".fbh-questions li").length).toBeGreaterThan(0);
     expect(byStatus("not_filed").querySelector(".fbh-reason").textContent).not.toBe("");
-    expect(byStatus("waiting").querySelectorAll(".fbh-replies li").length).toBeGreaterThan(0);
+    const waiting = items.find((one) => one.status === "waiting");
+    expect(byStatus("waiting").querySelector(".fbh-replies li").textContent).toContain(
+      waiting.replies[0].text,
+    );
   });
 
   it("draws a degraded report from the hub's fallback", () => {
@@ -109,5 +143,13 @@ describe("the contract shared with the hub", () => {
     expect(degraded).toBeDefined();
     const row = renderRow(document, degraded, {}, { me: degraded.reporter.id });
     expect(row.classList.contains("fbh-row-error")).toBe(false);
+  });
+
+  it("counts the reports that need the reporter, and forgets an answer once seen", () => {
+    const needsReply = items.find((one) => one.status === "needs_reply");
+    const answered = items.find((one) => one.status === "answered");
+    expect(attentionIds(items, {}).sort()).toEqual([needsReply.id, answered.id].sort());
+    const { seen } = markSeen({}, items);
+    expect(attentionIds(items, seen)).toEqual([needsReply.id]);
   });
 });

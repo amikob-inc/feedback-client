@@ -14,7 +14,7 @@
   "submit": {
     "status": 202,
     "body": {
-      "id": "7cfa1ac150e14446a67904f681e0bc62"
+      "id": "62451941aeaa45dabaedb899f42fcac3"
     }
   },
   "list": {
@@ -22,7 +22,7 @@
     "body": {
       "items": [
         {
-          "id": "6c418368c4b84aee9c92e8bdfc6eb65a",
+          "id": "813d46f817e44fa7a53c3e0b8c4c6eb0",
           "at": "2026-09-17T10:07:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -43,7 +43,7 @@
           ]
         },
         {
-          "id": "46a199dcea0146be93c6c3ac985eba4d",
+          "id": "599cea89cfb04d3fa540ac54498e1396",
           "at": "2026-09-17T10:06:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -70,7 +70,7 @@
           "replies": []
         },
         {
-          "id": "3dde5bfa207a49be8e3810851efe8afe",
+          "id": "96f08daf5e2646519f6580d100b7ad57",
           "at": "2026-09-17T10:05:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -96,7 +96,7 @@
           "replies": []
         },
         {
-          "id": "752d37f64bde440dae3c67dc0e523703",
+          "id": "a45c4860506047ce8dac217bbe6ee9a1",
           "at": "2026-09-17T10:04:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -122,7 +122,7 @@
           "replies": []
         },
         {
-          "id": "58f64b3401a5457499cec72bc2bb47a9",
+          "id": "63eecd725e984cc998d212f6b1fcee3f",
           "at": "2026-09-17T10:03:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -148,7 +148,7 @@
           "replies": []
         },
         {
-          "id": "71f3f2b277fd49338e88afce628c8977",
+          "id": "4f488bcd3be5463fbd372c2ff6a28245",
           "at": "2026-09-17T10:02:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -179,7 +179,7 @@
           "replies": []
         },
         {
-          "id": "7cfa1ac150e14446a67904f681e0bc62",
+          "id": "62451941aeaa45dabaedb899f42fcac3",
           "at": "2026-09-17T10:01:00.000Z",
           "section": "Rendering",
           "type": "Bug",
@@ -220,6 +220,35 @@
       "nextCursor": null
     }
   },
+  "listPage": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "813d46f817e44fa7a53c3e0b8c4c6eb0",
+          "at": "2026-09-17T10:07:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "The catalog is blank.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "waiting",
+          "label": "Received, waiting",
+          "verdict": null,
+          "replies": [
+            {
+              "at": "2026-09-17T10:07:00.000Z",
+              "by": "u-dana",
+              "text": "It happens on every reload."
+            }
+          ]
+        }
+      ],
+      "nextCursor": "813d46f817e44fa7a53c3e0b8c4c6eb0"
+    }
+  },
   "reply": {
     "status": 200,
     "body": {
@@ -237,19 +266,12 @@
   "retry": {
     "status": 200,
     "body": {
-      "id": "6c418368c4b84aee9c92e8bdfc6eb65a",
+      "id": "813d46f817e44fa7a53c3e0b8c4c6eb0",
       "status": "waiting",
       "label": "Received, waiting"
     }
   },
   "errors": {
-    "tooLarge": {
-      "status": 413,
-      "body": {
-        "error": "too_large",
-        "message": "screenshot exceeds 5242880 bytes"
-      }
-    },
     "unauthorized": {
       "status": 401,
       "body": {
@@ -257,11 +279,137 @@
         "message": "missing bearer token"
       }
     },
+    "anonymousSession": {
+      "status": 403,
+      "body": {
+        "error": "unauthorized",
+        "message": "anonymous sessions cannot report"
+      }
+    },
+    "origin": {
+      "status": 403,
+      "body": {
+        "error": "origin",
+        "message": "origin is not allowed for app cad"
+      }
+    },
+    "unknownApp": {
+      "status": 404,
+      "body": {
+        "error": "unknown_app",
+        "message": "unknown app nope"
+      }
+    },
+    "forbidden": {
+      "status": 403,
+      "body": {
+        "error": "forbidden",
+        "message": "not the reporter or an admin"
+      }
+    },
+    "unknownReport": {
+      "status": 404,
+      "body": {
+        "error": "unknown_report",
+        "message": "unknown report 00000000000000000000000000000000"
+      }
+    },
     "notRetryable": {
       "status": 409,
       "body": {
         "error": "not_retryable",
-        "message": "report 58f64b3401a5457499cec72bc2bb47a9 is answered"
+        "message": "report 63eecd725e984cc998d212f6b1fcee3f is answered"
+      }
+    },
+    "rateLimited": {
+      "status": 429,
+      "body": {
+        "error": "rate_limited",
+        "message": "too many reports in the last hour"
+      }
+    },
+    "tooManyReplies": {
+      "status": 429,
+      "body": {
+        "error": "too_many_replies",
+        "message": "report bd7e61750ee24b309b6b691bb4f1beb6 already has 50 replies"
+      }
+    },
+    "invalidText": {
+      "status": 400,
+      "body": {
+        "error": "invalid_text",
+        "message": "text is required"
+      }
+    },
+    "invalidReplyText": {
+      "status": 400,
+      "body": {
+        "error": "invalid_text",
+        "message": "text is required"
+      }
+    },
+    "invalidImage": {
+      "status": 400,
+      "body": {
+        "error": "invalid_image",
+        "message": "image must be image/png or image/jpeg"
+      }
+    },
+    "invalidReport": {
+      "status": 400,
+      "body": {
+        "error": "invalid_report",
+        "message": "report part is not valid JSON"
+      }
+    },
+    "tooLargeReport": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "report exceeds 524288 bytes"
+      }
+    },
+    "tooLargeScreenshot": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "screenshot exceeds 5242880 bytes"
+      }
+    },
+    "tooLargeReplay": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "replay exceeds 8388608 bytes"
+      }
+    },
+    "tooLargeImage": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "image exceeds 5242880 bytes"
+      }
+    },
+    "tooManyImages": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "image count exceeds 6"
+      }
+    },
+    "tooLargeBundle": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "bundle exceeds 26214400 bytes"
+      }
+    },
+    "tooLargeRequest": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "request exceeds 26214400 bytes"
       }
     }
   }
