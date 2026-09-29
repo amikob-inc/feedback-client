@@ -165,6 +165,12 @@ the page-wide stylesheet, `?breakhooks=1` makes every hook the app supplies thro
 states and the exact label the panel shows for each. Both repositories assert the same digest of
 it, so changing it means a pull request in both.
 
+`fixtures/contract.json` is shared the same way: the hub's caps for every part this library sends,
+and one example answer per route it calls (submit, list, reply, retry, and the errors), taken from
+the hub's own routes. Here `tests/contract.test.js` feeds those answers through the transport and
+the list; in the hub, the same examples are checked against what its routes answer, so a field the
+panel reads cannot be dropped, renamed or retyped there without a red test.
+
 ## Release
 
 Tag it; consumers install the tag.
