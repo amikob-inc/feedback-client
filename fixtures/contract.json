@@ -1,0 +1,416 @@
+{
+  "version": 1,
+  "note": "Shared by amikob-inc/feedback-client (canonical) and amikob-inc/feedback-hub (copy). The caps the panel enforces before sending, and one example answer per route it calls, taken from the hub's own routes. The hub may add fields to an answer; it may not drop, rename or retype one. Changing this file means a pull request in both repositories.",
+  "limits": {
+    "report": 524288,
+    "screenshot": 5242880,
+    "replay": 8388608,
+    "image": 5242880,
+    "images": 6,
+    "total": 26214400,
+    "text": 5000,
+    "reply": 2000
+  },
+  "submit": {
+    "status": 202,
+    "body": {
+      "id": "62451941aeaa45dabaedb899f42fcac3"
+    }
+  },
+  "list": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "813d46f817e44fa7a53c3e0b8c4c6eb0",
+          "at": "2026-09-17T10:07:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "The catalog is blank.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "waiting",
+          "label": "Received, waiting",
+          "verdict": null,
+          "replies": [
+            {
+              "at": "2026-09-17T10:07:00.000Z",
+              "by": "u-dana",
+              "text": "It happens on every reload."
+            }
+          ]
+        },
+        {
+          "id": "599cea89cfb04d3fa540ac54498e1396",
+          "at": "2026-09-17T10:06:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "Export is slow.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "filed",
+          "label": "Filed as #50",
+          "verdict": {
+            "verdict": "filed",
+            "summary": "",
+            "issueNumber": 50,
+            "issueUrl": "https://github.com/amikob-inc/feedback-sandbox/issues/50",
+            "duplicateOf": null,
+            "answer": null,
+            "questions": [],
+            "reason": null,
+            "candidate": false,
+            "receivedAt": "2026-09-17T10:06:00.000Z"
+          },
+          "degraded": true,
+          "replies": []
+        },
+        {
+          "id": "96f08daf5e2646519f6580d100b7ad57",
+          "at": "2026-09-17T10:05:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "asdf",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "not_filed",
+          "label": "Not filed",
+          "verdict": {
+            "verdict": "unusable",
+            "summary": "",
+            "issueNumber": null,
+            "issueUrl": null,
+            "duplicateOf": null,
+            "answer": null,
+            "questions": [],
+            "reason": "No description of a problem.",
+            "candidate": false,
+            "receivedAt": "2026-09-17T10:05:00.000Z"
+          },
+          "replies": []
+        },
+        {
+          "id": "a45c4860506047ce8dac217bbe6ee9a1",
+          "at": "2026-09-17T10:04:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "Prices look wrong.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "needs_reply",
+          "label": "Needs your reply",
+          "verdict": {
+            "verdict": "needs_info",
+            "summary": "",
+            "issueNumber": null,
+            "issueUrl": null,
+            "duplicateOf": null,
+            "answer": null,
+            "questions": ["Which SKU?"],
+            "reason": null,
+            "candidate": false,
+            "receivedAt": "2026-09-17T10:04:00.000Z"
+          },
+          "replies": []
+        },
+        {
+          "id": "63eecd725e984cc998d212f6b1fcee3f",
+          "at": "2026-09-17T10:03:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "How do I export a ring?",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "answered",
+          "label": "Answered",
+          "verdict": {
+            "verdict": "answered",
+            "summary": "",
+            "issueNumber": null,
+            "issueUrl": null,
+            "duplicateOf": null,
+            "answer": "Open the ring, then Export.",
+            "questions": [],
+            "reason": null,
+            "candidate": false,
+            "receivedAt": "2026-09-17T10:03:00.000Z"
+          },
+          "replies": []
+        },
+        {
+          "id": "4f488bcd3be5463fbd372c2ff6a28245",
+          "at": "2026-09-17T10:02:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "The popup still does not open.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "duplicate",
+          "label": "Already tracked as #8 (open)",
+          "verdict": {
+            "verdict": "duplicate",
+            "summary": "",
+            "issueNumber": null,
+            "issueUrl": null,
+            "duplicateOf": 8,
+            "answer": null,
+            "questions": [],
+            "reason": null,
+            "candidate": false,
+            "receivedAt": "2026-09-17T10:02:00.000Z"
+          },
+          "duplicateOf": {
+            "number": 8,
+            "url": "https://github.com/amikob-inc/feedback-sandbox/issues/8",
+            "state": "open"
+          },
+          "replies": []
+        },
+        {
+          "id": "62451941aeaa45dabaedb899f42fcac3",
+          "at": "2026-09-17T10:01:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "The ring popup does not open.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "in_progress",
+          "label": "Fix in progress",
+          "verdict": {
+            "verdict": "filed",
+            "summary": "Ring popup does not open",
+            "issueNumber": 42,
+            "issueUrl": "https://github.com/amikob-inc/feedback-sandbox/issues/42",
+            "duplicateOf": null,
+            "answer": null,
+            "questions": [],
+            "reason": null,
+            "candidate": false,
+            "receivedAt": "2026-09-17T10:01:00.000Z"
+          },
+          "issue": {
+            "number": 42,
+            "url": "https://github.com/amikob-inc/feedback-sandbox/issues/42",
+            "state": "open"
+          },
+          "pullRequest": {
+            "number": 43,
+            "url": "https://github.com/amikob-inc/feedback-sandbox/pull/43",
+            "state": "open",
+            "merged": false
+          },
+          "progress": "Working on it: the popup's handler is re-bound.",
+          "replies": []
+        }
+      ],
+      "nextCursor": null
+    }
+  },
+  "listPage": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "813d46f817e44fa7a53c3e0b8c4c6eb0",
+          "at": "2026-09-17T10:07:00.000Z",
+          "section": "Rendering",
+          "type": "Bug",
+          "text": "The catalog is blank.",
+          "reporter": {
+            "id": "u-dana",
+            "name": "Dana"
+          },
+          "status": "waiting",
+          "label": "Received, waiting",
+          "verdict": null,
+          "replies": [
+            {
+              "at": "2026-09-17T10:07:00.000Z",
+              "by": "u-dana",
+              "text": "It happens on every reload."
+            }
+          ]
+        }
+      ],
+      "nextCursor": "813d46f817e44fa7a53c3e0b8c4c6eb0"
+    }
+  },
+  "reply": {
+    "status": 200,
+    "body": {
+      "replies": [
+        {
+          "at": "2026-09-17T10:07:00.000Z",
+          "by": "u-dana",
+          "text": "It happens on every reload."
+        }
+      ],
+      "status": "waiting",
+      "label": "Received, waiting"
+    }
+  },
+  "retry": {
+    "status": 200,
+    "body": {
+      "id": "813d46f817e44fa7a53c3e0b8c4c6eb0",
+      "status": "waiting",
+      "label": "Received, waiting"
+    }
+  },
+  "errors": {
+    "unauthorized": {
+      "status": 401,
+      "body": {
+        "error": "unauthorized",
+        "message": "missing bearer token"
+      }
+    },
+    "anonymousSession": {
+      "status": 403,
+      "body": {
+        "error": "unauthorized",
+        "message": "anonymous sessions cannot report"
+      }
+    },
+    "origin": {
+      "status": 403,
+      "body": {
+        "error": "origin",
+        "message": "origin is not allowed for app cad"
+      }
+    },
+    "unknownApp": {
+      "status": 404,
+      "body": {
+        "error": "unknown_app",
+        "message": "unknown app nope"
+      }
+    },
+    "forbidden": {
+      "status": 403,
+      "body": {
+        "error": "forbidden",
+        "message": "not the reporter or an admin"
+      }
+    },
+    "unknownReport": {
+      "status": 404,
+      "body": {
+        "error": "unknown_report",
+        "message": "unknown report 00000000000000000000000000000000"
+      }
+    },
+    "notRetryable": {
+      "status": 409,
+      "body": {
+        "error": "not_retryable",
+        "message": "report 63eecd725e984cc998d212f6b1fcee3f is answered"
+      }
+    },
+    "rateLimited": {
+      "status": 429,
+      "body": {
+        "error": "rate_limited",
+        "message": "too many reports in the last hour"
+      }
+    },
+    "tooManyReplies": {
+      "status": 429,
+      "body": {
+        "error": "too_many_replies",
+        "message": "report bd7e61750ee24b309b6b691bb4f1beb6 already has 50 replies"
+      }
+    },
+    "invalidText": {
+      "status": 400,
+      "body": {
+        "error": "invalid_text",
+        "message": "text is required"
+      }
+    },
+    "invalidReplyText": {
+      "status": 400,
+      "body": {
+        "error": "invalid_text",
+        "message": "text is required"
+      }
+    },
+    "invalidImage": {
+      "status": 400,
+      "body": {
+        "error": "invalid_image",
+        "message": "image must be image/png or image/jpeg"
+      }
+    },
+    "invalidReport": {
+      "status": 400,
+      "body": {
+        "error": "invalid_report",
+        "message": "report part is not valid JSON"
+      }
+    },
+    "tooLargeReport": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "report exceeds 524288 bytes"
+      }
+    },
+    "tooLargeScreenshot": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "screenshot exceeds 5242880 bytes"
+      }
+    },
+    "tooLargeReplay": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "replay exceeds 8388608 bytes"
+      }
+    },
+    "tooLargeImage": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "image exceeds 5242880 bytes"
+      }
+    },
+    "tooManyImages": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "image count exceeds 6"
+      }
+    },
+    "tooLargeBundle": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "bundle exceeds 26214400 bytes"
+      }
+    },
+    "tooLargeRequest": {
+      "status": 413,
+      "body": {
+        "error": "too_large",
+        "message": "request exceeds 26214400 bytes"
+      }
+    }
+  }
+}
