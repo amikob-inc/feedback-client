@@ -4,7 +4,7 @@ import { normalizeOptions } from "../src/options.js";
 import { FOCUSABLE, HOST_ID, createPanel } from "../src/panel/panel.js";
 import { THEME_PROPERTIES } from "../src/panel/styles.js";
 
-function setup({ theme = () => "light" } = {}) {
+function setup({ theme = () => "light", api: apiOverrides = {} } = {}) {
   const api = {
     submit: vi.fn(async () => ({ id: "r1", dropped: [] })),
     captureScreenshot: vi.fn(async () => null),
@@ -12,6 +12,7 @@ function setup({ theme = () => "light" } = {}) {
     reply: vi.fn(),
     retry: vi.fn(),
     markRead: vi.fn(),
+    ...apiOverrides,
   };
   const options = normalizeOptions({
     hubUrl: "https://hub.example",
@@ -334,6 +335,49 @@ describe("createPanel", () => {
           new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
         );
       expect(panel.isOpen()).toBe(true);
+      panel.destroy();
+    });
+
+    it("closing the panel closes an open preview, and gives Escape back to the page", async () => {
+      const calls = [];
+      class Player {
+        constructor({ target }) {
+          calls.push("construct");
+          target.appendChild(document.createElement("iframe"));
+        }
+        addEventListener() {}
+        getMetaData() {
+          return { totalTime: 0 };
+        }
+        toggle() {}
+        pause() {
+          calls.push("pause");
+        }
+        $destroy() {
+          calls.push("destroy");
+        }
+      }
+      const { panel } = setup({
+        api: {
+          replayEvents: () => [{ type: 2, timestamp: 1000, data: {} }],
+          loadPlayer: async () => ({ Player }),
+        },
+      });
+      panel.open();
+      shadow().querySelector("[data-preview]").click();
+      expect(shadow().querySelector(".fbh-preview")).not.toBe(null);
+      await vi.waitFor(() => expect(calls).toEqual(["construct"]));
+      panel.close();
+      expect(shadow().querySelector(".fbh-preview")).toBe(null);
+      expect(calls).toEqual(["construct", "pause", "destroy"]);
+      // The preview's keydown listener on the document is gone: the page's own Escape travels on
+      // past the document (a listener still there would stop it at the document).
+      const seenAtWindow = vi.fn();
+      window.addEventListener("keydown", seenAtWindow, { once: true });
+      document.body.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+      expect(seenAtWindow).toHaveBeenCalledTimes(1);
       panel.destroy();
     });
 

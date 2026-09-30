@@ -88,6 +88,7 @@ export function createForm({
   // an open dialog would otherwise keep running after the form itself is gone.
   let activeAnnotator = null;
   let activePreview = null;
+  let releases = 0;
   let destroyed = false;
 
   const sectionSelect = el(doc, "select", { id: "fbh-section", class: "fbh-input" });
@@ -434,6 +435,7 @@ export function createForm({
     // document would hand back the panel's wrapper and "focus goes back where it came from"
     // would put it on something that cannot hold focus at all.
     const trigger = activeWithin(element);
+    const opened = releases;
     annotatorMount.hidden = false;
     element.classList.add("fbh-form-annotating");
     const stop = () => {
@@ -454,6 +456,12 @@ export function createForm({
     // finishes opening *after* destroy() ran would otherwise never be told to close at all.
     if (destroyed) {
       annotator.close(); // a no-op {element: null, close(){}} when it never opened, either way
+      return;
+    }
+    // The same for a panel closed while it was opening: release() could not reach it yet.
+    if (releases !== opened) {
+      annotator.close();
+      if (!annotatorMount.hidden) stop();
       return;
     }
     if (!annotator.element) {
@@ -672,7 +680,15 @@ export function createForm({
     }
   }
 
+  // Called by the panel's close(), before it hands focus back to the page. A nested dialog left
+  // open behind a hidden overlay would keep playing (the preview) and keep its keydown listener
+  // on `doc`, swallowing the host page's next Escape — so both are closed here; their onClose
+  // restores the form's classes and mounts. `releases` tells an annotator still opening that the
+  // panel closed under it.
   function release() {
+    releases += 1;
+    if (activePreview) activePreview.close();
+    if (activeAnnotator) activeAnnotator.close();
     if (!pasting) return;
     doc.removeEventListener("paste", onPaste);
     pasting = false;

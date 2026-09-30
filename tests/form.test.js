@@ -767,6 +767,93 @@ describe("What will be sent", () => {
     form.destroy();
   });
 
+  it("release() closes an open preview and puts the form back", async () => {
+    const closed = vi.fn();
+    const openPreview = vi.fn(({ mount, onClose }) => {
+      const element = document.createElement("div");
+      element.className = "fbh-preview";
+      mount.appendChild(element);
+      return {
+        element,
+        close() {
+          closed();
+          element.remove();
+          onClose();
+        },
+      };
+    });
+    const { form } = setup({ openPreview });
+    await form.prepare();
+    $("[data-preview]").click();
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(true);
+    form.release();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(false);
+    expect($(".fbh-preview-mount").hidden).toBe(true);
+    // Idempotent: a second release() has nothing left to close.
+    form.release();
+    expect(closed).toHaveBeenCalledTimes(1);
+    form.destroy();
+  });
+
+  it("release() closes an open drawing dialog and puts the form back", async () => {
+    const closed = vi.fn();
+    const openAnnotator = vi.fn(({ mount, onClose }) => {
+      const dialog = fakeAnnotatorDialog(document, mount);
+      return Promise.resolve({
+        element: dialog.element,
+        close() {
+          closed();
+          dialog.close();
+          onClose();
+        },
+      });
+    });
+    const { form } = setup({ openAnnotator });
+    await form.prepare();
+    $(".fbh-thumb-draw").click();
+    await vi.waitFor(() => expect(openAnnotator).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(true);
+    form.release();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(false);
+    expect($(".fbh-annotator-mount").hidden).toBe(true);
+    form.destroy();
+  });
+
+  it("closes a drawing dialog that finishes opening after release()", async () => {
+    const closed = vi.fn();
+    let finish;
+    const openAnnotator = vi.fn(
+      ({ mount, onClose }) =>
+        new Promise((resolve) => {
+          finish = () => {
+            const dialog = fakeAnnotatorDialog(document, mount);
+            resolve({
+              element: dialog.element,
+              close() {
+                closed();
+                dialog.close();
+                onClose();
+              },
+            });
+          };
+        }),
+    );
+    const { form } = setup({ openAnnotator });
+    await form.prepare();
+    $(".fbh-thumb-draw").click();
+    await vi.waitFor(() => expect(openAnnotator).toHaveBeenCalledTimes(1));
+    form.release();
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(false);
+    expect($(".fbh-annotator-mount").hidden).toBe(true);
+    form.destroy();
+  });
+
   it("says so instead of opening a preview when nothing was recorded", async () => {
     const openPreview = vi.fn();
     const { form } = setup({ openPreview, api: { replayEvents: () => [] } });
