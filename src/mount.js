@@ -6,7 +6,7 @@
 import { installBuffers } from "./buffers/install.js";
 import { CAPS, buildBundle, buildReport } from "./bundle.js";
 import { gzip } from "./capture/gzip.js";
-import { idle, serializeReplay, startReplay } from "./capture/replay.js";
+import { idle, replayWindow, serializeReplay, startReplay } from "./capture/replay.js";
 import { captureScreenshot } from "./capture/screenshot.js";
 import { defaultSection, normalizeOptions } from "./options.js";
 import { attentionIds, markSeen, readSeen, safeStorage, seenKey, writeSeen } from "./seen.js";
@@ -139,6 +139,22 @@ export function mountFeedback(rawOptions, deps = {}) {
   const storage = deps.storage !== undefined ? deps.storage : safeStorage(win);
   const schedule = deps.schedule || idle;
 
+  // The recording a report carries is the minute or two before the panel opened, not before
+  // the reporter pressed Send (owner's request, 2026-09-30): open() takes a copy of both
+  // segments as they are at that moment, submit() sends the copy, and a successful submit lets
+  // it go. A failed submit keeps it, so a retry sends the same recording; a headless submit()
+  // with no open() before it sends the live recording, as before.
+  let frozen = null;
+
+  function freezeReplay() {
+    frozen = replay ? replay.segments.snapshot() : null;
+  }
+
+  function recordingSource() {
+    if (frozen) return frozen;
+    return replay ? replay.segments : null;
+  }
+
   let panel = null;
   let seen = {};
   let seenFor = null;
@@ -199,8 +215,9 @@ export function mountFeedback(rawOptions, deps = {}) {
   }
 
   async function replayPart() {
-    if (!replay) return null;
-    const serialized = serializeReplay(replay.segments);
+    const source = recordingSource();
+    if (!source) return null;
+    const serialized = serializeReplay(source);
     if (!serialized || !serialized.json) return null;
     return gzip(serialized.json);
   }
@@ -257,6 +274,7 @@ export function mountFeedback(rawOptions, deps = {}) {
 
     const bundle = buildBundle({ report, screenshot, replay: replayBlob, images });
     const answer = await transport.submit(bundle.form);
+    frozen = null;
     return { id: answer.id, dropped: bundle.dropped };
   }
 
@@ -275,6 +293,27 @@ export function mountFeedback(rawOptions, deps = {}) {
 
   function retry(id) {
     return transport.retry(id);
+  }
+
+  // What the next report will carry, for the panel's "What will be sent" list: whether a
+  // screenshot is taken, the recording's window (from the frozen copy once the panel is open),
+  // and how many entries each buffer holds right now.
+  function pending() {
+    const source = recordingSource();
+    return {
+      screenshot: !!options.capture.screenshot,
+      replay: source ? replayWindow(source) : null,
+      console: buffers.console().length,
+      errors: buffers.errors().length,
+      network: buffers.network().length,
+      breadcrumbs: buffers.breadcrumbs().length,
+    };
+  }
+
+  // The events the preview plays: the same ones the report would carry.
+  function replayEvents() {
+    const source = recordingSource();
+    return source ? source.events() : [];
   }
 
   // One load at a time: a reporter who clicks twice while the chunk is on its way must get one
@@ -317,6 +356,7 @@ export function mountFeedback(rawOptions, deps = {}) {
   // was destroyed, or the panel could not be loaded). It never rejects.
   async function open() {
     wantOpen = true;
+    freezeReplay();
     const current = await ensurePanel();
     if (current && wantOpen) current.open();
   }
@@ -347,8 +387,17 @@ export function mountFeedback(rawOptions, deps = {}) {
   }
 
   const handle = { open, close, submit, list, reply, retry, destroy };
-  // What the panel gets: the same seven functions plus the three it alone needs.
-  const internal = { ...handle, markRead, captureScreenshot: captureNow, replayReady, options };
+  // What the panel gets: the same seven functions plus the six it alone needs.
+  const internal = {
+    ...handle,
+    markRead,
+    captureScreenshot: captureNow,
+    replayReady,
+    pending,
+    replayEvents,
+    loadPlayer: deps.loadPlayer,
+    options,
+  };
 
   if (button) button.addEventListener("click", onButtonClick);
   // One listing after the first idle callback, so the app's topbar dot is right before anyone

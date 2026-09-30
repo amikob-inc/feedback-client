@@ -552,3 +552,148 @@ describe("open", () => {
     expect(document.getElementById("fbh-host")).toBe(null);
   });
 });
+
+// The recording a report carries is the one from *before* the panel opened (owner's request,
+// 2026-09-30): a copy is taken at open(), and what the recorder adds while the reporter writes
+// never reaches the report. Without this, a report written slowly carried the minutes of writing
+// and nothing of what it was about.
+describe("the recording is frozen when the panel opens", () => {
+  function recorderEmitting(emitted) {
+    // A recorder whose emit handle the test keeps, so events can be added at chosen moments.
+    return async () => ({
+      record(options) {
+        emitted.push(options.emit);
+        options.emit({ type: 2, timestamp: 1000, data: {} }, true);
+        return () => {};
+      },
+    });
+  }
+
+  async function mountRecording() {
+    const emitted = [];
+    let api = null;
+    const { handle, transport } = mount(
+      { capture: { replay: true, screenshot: false } },
+      {
+        loadRecorder: recorderEmitting(emitted),
+        schedule: (fn) => fn(),
+        createPanel: ({ api: given }) => {
+          api = given;
+          return { open() {}, close() {}, destroy() {} };
+        },
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const emit = emitted[0];
+    return { handle, transport, emit, api: () => api };
+  }
+
+  async function replayEventsSent(transport, call = 0) {
+    const part = transport.submit.mock.calls[call][0].get("replay");
+    const bytes = new Uint8Array(await part.arrayBuffer());
+    const text = new TextDecoder().decode(
+      new Uint8Array(
+        await new Response(
+          new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")),
+        ).arrayBuffer(),
+      ),
+    );
+    return JSON.parse(text).map((event) => event.timestamp);
+  }
+
+  it("sends what was recorded before open(), not what came after", async () => {
+    const { handle, transport, emit } = await mountRecording();
+    emit({ type: 3, timestamp: 2000, data: {} }, false);
+    await handle.open();
+    emit({ type: 3, timestamp: 9000, data: {} }, false);
+    emit({ type: 2, timestamp: 9500, data: {} }, true);
+    await handle.submit({ text: "written slowly" });
+    expect(await replayEventsSent(transport)).toEqual([1000, 2000]);
+    handle.destroy();
+  });
+
+  it("takes a fresh copy on every open(), and forgets it after a successful submit", async () => {
+    const { handle, transport, emit } = await mountRecording();
+    await handle.open();
+    emit({ type: 3, timestamp: 2000, data: {} }, false);
+    await handle.open();
+    await handle.submit({ text: "second open" });
+    expect(await replayEventsSent(transport, 0)).toEqual([1000, 2000]);
+    // Headless, with no open() in between: the live recording again.
+    emit({ type: 3, timestamp: 3000, data: {} }, false);
+    await handle.submit({ text: "headless" });
+    expect(await replayEventsSent(transport, 1)).toEqual([1000, 2000, 3000]);
+    handle.destroy();
+  });
+
+  it("keeps the copy when the submit fails, so a retry sends the same recording", async () => {
+    const { handle, transport, emit } = await mountRecording();
+    await handle.open();
+    emit({ type: 3, timestamp: 5000, data: {} }, false);
+    transport.submit.mockRejectedValueOnce(new Error("hub down"));
+    await expect(handle.submit({ text: "first try" })).rejects.toThrow("hub down");
+    await handle.submit({ text: "second try" });
+    expect(await replayEventsSent(transport, 1)).toEqual([1000]);
+    handle.destroy();
+  });
+
+  it("pending() says what the next report carries, with counts, from the frozen copy", async () => {
+    const { handle, emit, api } = await mountRecording();
+    emit({ type: 3, timestamp: 61_000, data: {} }, false);
+    await handle.open();
+    emit({ type: 3, timestamp: 200_000, data: {} }, false);
+    const pending = api().pending();
+    expect(pending.replay).toEqual({ from: 1000, to: 61_000, seconds: 60 });
+    expect(pending.screenshot).toBe(false);
+    expect(pending).toMatchObject({ console: 0, errors: 0, network: 0, breadcrumbs: 0 });
+    expect(
+      api()
+        .replayEvents()
+        .map((e) => e.timestamp),
+    ).toEqual([1000, 61_000]);
+    handle.destroy();
+  });
+
+  it("pending() has no recording and no events without a recorder", async () => {
+    let api = null;
+    const { handle } = mount(
+      { capture: { replay: false, screenshot: true } },
+      {
+        createPanel: ({ api: given }) => {
+          api = given;
+          return { open() {}, close() {}, destroy() {} };
+        },
+      },
+    );
+    await handle.open();
+    expect(api.pending()).toEqual({
+      screenshot: true,
+      replay: null,
+      console: 0,
+      errors: 0,
+      network: 0,
+      breadcrumbs: 0,
+    });
+    expect(api.replayEvents()).toEqual([]);
+    expect(api.loadPlayer).toBe(undefined);
+    handle.destroy();
+  });
+
+  it("hands deps.loadPlayer to the panel as api.loadPlayer", async () => {
+    const loadPlayer = async () => ({});
+    let api = null;
+    const { handle } = mount(
+      { capture: { replay: false, screenshot: false } },
+      {
+        loadPlayer,
+        createPanel: ({ api: given }) => {
+          api = given;
+          return { open() {}, close() {}, destroy() {} };
+        },
+      },
+    );
+    await handle.open();
+    expect(api.loadPlayer).toBe(loadPlayer);
+    handle.destroy();
+  });
+});
