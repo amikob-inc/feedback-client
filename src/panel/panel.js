@@ -73,7 +73,10 @@ export function createPanel({ api, options, doc }) {
       hidden: true,
       onKeydown: onKeydown,
       onClick: (event) => {
-        if (event.target === overlay) close();
+        // A nested dialog owns the backdrop as it owns Escape: a click outside the drawing
+        // dialog used to close the whole panel and, with the screenshot retaken on the next
+        // open, lose the drawing (owner's finding, 2026-09-30).
+        if (event.target === overlay && !nestedDialog()) close();
       },
     },
     [panelBox],

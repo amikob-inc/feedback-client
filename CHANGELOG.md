@@ -5,6 +5,15 @@ All notable changes to this package. Consumers install a git tag
 
 ## 0.3.0 — 2026-09-30
 
+- A click on the backdrop while the drawing or the preview dialog is open no longer closes the
+  whole panel (owner's finding, 2026-09-30: with the screenshot retaken on the next open, a click
+  beside the drawing dialog lost the drawing). The dialog owns the backdrop as it owns Escape.
+- The panel is 600 px wide on desktop (was 460). The screenshot thumbnail is 144×96 with larger,
+  clearer Draw and Remove buttons; "What will be sent" is a captioned block; the recording's
+  "Don't send it" control is a switch at the right end of its line; "My reports" rows put their
+  actions in one right-aligned row; the recording preview plays centred on a dark stage — and
+  plays at all: the player centres its frame from the box's middle, and two of rrweb's wrapper
+  rules that make that work had been left out, so the recording was drawn out of its box.
 - The recording a report carries is the minute or two **before the panel opened**, however long
   the report takes to write: a copy of the recording is taken the moment the panel opens and that
   copy is sent (a failed submit keeps it for the retry; the next open takes a fresh one). Until

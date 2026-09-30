@@ -196,6 +196,10 @@ export function renderRow(doc, item, handlers = {}, { me = null, now = new Date(
       row.appendChild(el(doc, "div", { class: "fbh-reply-row" }, [box, send]));
     }
 
+    // Every action a row offers sits in one right-aligned row under its text: Retry, Delete, and
+    // the delete confirmation that replaces Delete while it asks.
+    const actions = el(doc, "div", { class: "fbh-row-actions" });
+
     if (isRetryable(item.status)) {
       const retryButton = el(doc, "button", {
         type: "button",
@@ -213,7 +217,7 @@ export function renderRow(doc, item, handlers = {}, { me = null, now = new Date(
           });
         },
       });
-      row.appendChild(retryButton);
+      actions.appendChild(retryButton);
     }
 
     // Delete, where the hub says it would accept one (`canDelete` on the item — the rule lives
@@ -276,10 +280,11 @@ export function renderRow(doc, item, handlers = {}, { me = null, now = new Date(
           confirmButton.focus();
         },
       });
-      row.appendChild(deleteButton);
-      row.appendChild(confirm);
+      actions.appendChild(deleteButton);
+      actions.appendChild(confirm);
     }
 
+    if (actions.childElementCount) row.appendChild(actions);
     row.appendChild(message);
     return row;
   } catch (err) {

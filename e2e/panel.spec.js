@@ -282,7 +282,7 @@ test("previews the recording almost full screen, and puts everything back on Clo
   );
   await page.click("[data-preview-close]");
   await expect(page.locator(".fbh-preview")).toBeHidden();
-  expect(await panelWidth()).toBeLessThanOrEqual(480);
+  expect(await panelWidth()).toBeLessThanOrEqual(620); // the 600px column plus its border
   expect(await focusSpot(page)).toEqual({ outer: "host", inner: "fbh-link" });
 });
 
@@ -722,7 +722,7 @@ test("draws on the screenshot at the image's own resolution", async ({ page, req
   await page.mouse.up();
   await page.click("[data-save]");
   await expect(page.locator(".fbh-annotator-canvas")).toBeHidden();
-  expect(await panelWidth()).toBeLessThanOrEqual(480); // the 460px column plus its border
+  expect(await panelWidth()).toBeLessThanOrEqual(620); // the 600px column plus its border
   await expect(page.locator(".fbh-annotator")).toBeHidden();
 
   await page.fill("#fbh-text", "with a mark on it");

@@ -113,6 +113,10 @@ export function createForm({
   // everything below stay exactly as they were. Rebuilding the line, or changing its words, made
   // the switch itself jump under the pointer (owner's finding, 2026-09-30).
   const sending = el(doc, "ul", { class: "fbh-sending", "aria-label": "What will be sent" });
+  const sendingBox = el(doc, "div", { class: "fbh-sending-box" }, [
+    el(doc, "span", { class: "fbh-sending-title", text: "What will be sent" }),
+    sending,
+  ]);
   const replayText = el(doc, "span", { class: "fbh-sending-text" });
   const previewButton = el(doc, "button", {
     type: "button",
@@ -137,9 +141,10 @@ export function createForm({
     [
       replayText,
       previewButton,
-      el(doc, "label", { class: "fbh-check fbh-inline" }, [
+      el(doc, "label", { class: "fbh-switch", title: "Send the report without the recording" }, [
         replayToggle,
-        el(doc, "span", { text: "Leave it out" }),
+        el(doc, "span", { class: "fbh-switch-track", "aria-hidden": "true" }),
+        el(doc, "span", { class: "fbh-switch-label", text: "Don't send it" }),
       ]),
     ],
   );
@@ -208,7 +213,7 @@ export function createForm({
     annotatorMount,
     previewMount,
     actions,
-    sending,
+    sendingBox,
     el(doc, "div", { class: "fbh-status-row" }, [message, retrySlot]),
     el(doc, "div", { class: "fbh-submit-row" }, [submitButton]),
   ]);
@@ -342,6 +347,7 @@ export function createForm({
         class: "fbh-thumb-draw",
         "data-draw": true,
         "aria-label": `Draw on ${label}`,
+        title: "Draw on it",
         text: "✎",
         onClick: () => onDraw(blob),
       }),
@@ -350,6 +356,7 @@ export function createForm({
         class: "fbh-thumb-remove",
         "data-remove": true,
         "aria-label": `Remove ${label}`,
+        title: "Remove",
         text: "✕",
         onClick: onRemove,
       }),

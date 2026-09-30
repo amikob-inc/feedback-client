@@ -105,7 +105,7 @@ text-shadow: none; text-transform: none; white-space: normal;
 }
 .fbh-overlay[hidden] { display: none; }
 .fbh-panel {
-width: min(460px, 100vw); max-height: 88vh; background: var(--fbh-panel);
+width: min(600px, 100vw); max-height: 88vh; background: var(--fbh-panel);
 border: 1px solid var(--fbh-border); border-radius: 14px 14px 0 0;
 display: flex; flex-direction: column; overflow: hidden;
 box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
@@ -137,18 +137,19 @@ border: 1px solid var(--fbh-border); border-radius: 8px;
 .fbh-strip { display: flex; flex-wrap: wrap; gap: 8px; }
 .fbh-strip:empty { display: none; }
 .fbh-thumb {
-position: relative; margin: 0; width: 84px; font-size: 10.5px; color: var(--fbh-muted); text-align: center;
+position: relative; margin: 0; width: 144px; font-size: 11px; color: var(--fbh-muted); text-align: center;
 }
 .fbh-thumb-img {
-display: block; width: 84px; height: 56px; object-fit: cover;
-border: 1px solid var(--fbh-border); border-radius: 6px; background: var(--fbh-tag-bg);
+display: block; width: 144px; height: 96px; object-fit: cover;
+border: 1px solid var(--fbh-border); border-radius: 8px; background: var(--fbh-tag-bg);
 }
 .fbh-thumb-remove, .fbh-thumb-draw {
-position: absolute; top: 2px; border: 0; border-radius: 50%; width: 18px; height: 18px;
-cursor: pointer; font-size: 10px; line-height: 1; color: var(--fbh-accent-on); background: var(--fbh-accent);
+position: absolute; top: 6px; border: 0; border-radius: 50%; width: 26px; height: 26px;
+cursor: pointer; font-size: 14px; line-height: 1; color: var(--fbh-accent-on); background: var(--fbh-accent);
+box-shadow: 0 0 0 2px var(--fbh-panel), 0 1px 4px rgba(0, 0, 0, 0.3);
 }
-.fbh-thumb-remove { right: 2px; }
-.fbh-thumb-draw { right: 24px; }
+.fbh-thumb-remove { right: 6px; background: var(--fbh-danger); }
+.fbh-thumb-draw { right: 38px; }
 .fbh-annotator-mount[hidden] { display: none; }
 .fbh-annotator {
 display: flex; flex-direction: column; gap: 8px;
@@ -179,8 +180,8 @@ display: flex; flex-direction: column; gap: 8px;
 padding: 10px; border: 1px solid var(--fbh-border); border-radius: 10px; background: var(--fbh-bg);
 }
 .fbh-preview-stage {
-height: calc(96vh - 230px); min-height: 240px; overflow: hidden;
-display: flex; align-items: center; justify-content: center; background: var(--fbh-panel);
+height: calc(96vh - 230px); min-height: 240px; overflow: hidden; padding: 12px; box-sizing: border-box;
+display: flex; align-items: center; justify-content: center; background: #15151a; border-radius: 8px;
 }
 .fbh-preview-status { margin: 0; font-size: 11.5px; color: var(--fbh-muted); }
 .fbh-preview-status:empty { display: none; }
@@ -189,9 +190,12 @@ display: flex; align-items: center; justify-content: center; background: var(--f
 /* rrweb's replayer inside the shadow root: its own stylesheet is not loaded (the player's is
    Svelte-scoped), so the few rules the replayer needs — the wrapper, the frame, the cursor —
    are here, by rrweb's class names, from rrweb-player/dist/style.css. */
-.rr-player { position: relative; background: #fff; border-radius: 5px; }
+.rr-player { position: relative; float: left; background: #fff; border-radius: 5px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45); }
 .rr-player__frame { overflow: hidden; }
-.replayer-wrapper { position: relative; transform-origin: top left; }
+/* The player centres the scaled frame from the box's middle (its inline transform ends in
+   translate(-50%, -50%)), so these two offsets are load-bearing: without them the recording is
+   drawn up and to the left, out of the box. */
+.replayer-wrapper { position: relative; float: left; clear: both; transform-origin: top left; left: 50%; top: 50%; }
 .replayer-wrapper > iframe { border: none; }
 .replayer-mouse {
 position: absolute; width: 20px; height: 20px; transition: left 0.05s linear, top 0.05s linear;
@@ -212,11 +216,24 @@ border-radius: 100%; transform: translate(-50%, -50%); opacity: 0.3;
 .fbh-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fbh-retry-slot:empty { display: none; }
 .fbh-check { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--fbh-muted); }
-.fbh-sending { margin: 0; padding: 0 0 0 16px; font-size: 11.5px; color: var(--fbh-muted); }
-.fbh-sending-item { margin: 2px 0; }
+.fbh-sending-box {
+padding: 8px 12px; border: 1px solid var(--fbh-hairline); border-radius: 10px; background: var(--fbh-bg);
+}
+.fbh-sending-title { display: block; margin: 0 0 4px; font-size: 11px; font-weight: 600; color: var(--fbh-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.fbh-sending { margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--fbh-text); }
+.fbh-sending-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.fbh-sending-item::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--fbh-accent); }
 .fbh-sending-item[hidden] { display: none; }
-.fbh-sending-replay .fbh-check { display: inline-flex; vertical-align: baseline; }
-.fbh-sending-replay.is-off .fbh-sending-text { text-decoration: line-through; opacity: 0.7; }
+.fbh-sending-replay .fbh-sending-text { flex: 1 1 auto; }
+.fbh-sending-replay.is-off .fbh-sending-text { text-decoration: line-through; opacity: 0.6; }
+.fbh-sending-replay.is-off::before { background: var(--fbh-muted); }
+.fbh-switch { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; cursor: pointer; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-switch input { position: absolute; left: 0; top: 0; width: 32px; height: 18px; margin: 0; opacity: 0; cursor: pointer; }
+.fbh-switch-track { position: relative; flex: none; width: 32px; height: 18px; border-radius: 999px; background: var(--fbh-border); transition: background 0.15s; }
+.fbh-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: left 0.15s; }
+.fbh-switch input:checked + .fbh-switch-track { background: var(--fbh-danger); }
+.fbh-switch input:checked + .fbh-switch-track::after { left: 16px; }
+.fbh-switch input:focus-visible + .fbh-switch-track { outline: 2px solid var(--fbh-accent); outline-offset: 2px; }
 .fbh-link {
 padding: 0 4px; border: 0; background: none; cursor: pointer; font: inherit; font-size: 11.5px;
 color: var(--fbh-accent); text-decoration: underline;
@@ -247,9 +264,11 @@ font: inherit; font-size: 11.5px; font-weight: 600; background: none; color: var
 .fbh-empty { margin: 0; padding: 14px 0; text-align: center; font-size: 12.5px; color: var(--fbh-muted); }
 .fbh-empty[hidden] { display: none; }
 .fbh-list { list-style: none; margin: 0; padding: 0; }
-.fbh-row { padding: 10px 0; border-bottom: 1px solid var(--fbh-hairline); }
+.fbh-row { padding: 12px 0; border-bottom: 1px solid var(--fbh-hairline); }
 .fbh-row:last-child { border-bottom: 0; }
-.fbh-row-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
+.fbh-row-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.fbh-row-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-top: 8px; }
+.fbh-row-actions .fbh-inline { margin-left: 0; }
 .fbh-tag {
 padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600;
 background: var(--fbh-tag-bg); color: var(--fbh-tag-text);
@@ -263,7 +282,7 @@ background: var(--fbh-tag-bg); color: var(--fbh-tag-text);
 .fbh-pill-done { background: var(--fbh-success); color: var(--fbh-accent-on); }
 .fbh-pill-attention, .fbh-pill-bad { background: var(--fbh-danger); color: #ffffff; }
 .fbh-pill-muted { color: var(--fbh-muted); }
-.fbh-row-text { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.fbh-row-text { margin: 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
 .fbh-answer, .fbh-reason, .fbh-progress { margin: 6px 0 0; font-size: 12.5px; color: var(--fbh-muted); }
 .fbh-answer { color: var(--fbh-text); }
 .fbh-questions, .fbh-replies { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--fbh-muted); }

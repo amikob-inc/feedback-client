@@ -114,6 +114,30 @@ describe("createPanel", () => {
     panel.destroy();
   });
 
+  // Owner's finding, 2026-09-30: drawing on the screenshot and clicking outside the drawing
+  // dialog closed the whole panel — and the next open retakes the screenshot, so the drawing was
+  // gone. While a nested dialog is open the backdrop belongs to it, like Escape does.
+  it("ignores a backdrop click while a drawing or preview dialog is open", () => {
+    const { panel } = setup();
+    panel.open();
+    const root = shadow();
+    for (const klass of ["fbh-annotator", "fbh-preview"]) {
+      const nested = document.createElement("div");
+      nested.className = klass;
+      root.querySelector(".fbh-body").appendChild(nested);
+      root
+        .querySelector(".fbh-overlay")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(panel.isOpen()).toBe(true);
+      nested.remove();
+    }
+    root
+      .querySelector(".fbh-overlay")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(panel.isOpen()).toBe(false);
+    panel.destroy();
+  });
+
   it("closes on Escape, on the close button and on the backdrop, and gives focus back", () => {
     document.body.innerHTML = `<button id="opener"></button>`;
     const opener = document.getElementById("opener");
