@@ -122,18 +122,55 @@ export function imageName(blob, index) {
   return blob.type === "image/jpeg" ? `${index + 1}.jpg` : `${index + 1}.png`;
 }
 
-// The "what will be sent" line the panel shows before submit (spec §5.4), so leaving the
-// recording out is an informed choice rather than a surprise. Names only what is actually
-// present; the console and network log are always named last because they are always sent when
-// capture is on (there is no separate opt-out for them the way there is for the recording).
-export function describeAttachments({ screenshot = null, replay = null, images = [] } = {}) {
-  const parts = [];
-  if (screenshot) parts.push("a screenshot of this page");
-  if (replay) parts.push("a recording of the last minute or two");
-  if (images.length === 1) parts.push("1 image you added");
-  else if (images.length > 1) parts.push(`${images.length} images you added`);
-  parts.push("the console and network log");
-  return `What will be sent: ${parts.join(", ")}.`;
+// "1 min 43 s", "47 s", "2 min": the length of the recording as the reporter reads it.
+export function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (minutes === 0) return `${rest} s`;
+  return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+}
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// The "What will be sent" list (spec §5.4, owner's request 2026-09-30: a list, with counts): one
+// line per thing that goes, in the order it is worth reading, and nothing for what does not go —
+// except the log line, which is always there. The recording's line names the window it covers
+// (the minute or two *before* the panel opened, mount.js) so the reporter knows what it shows;
+// leaving it out is the form's business (the line stays put and is struck through), not this
+// function's, which is why there is no "left out" wording here.
+export function attachmentLines({
+  screenshot = false,
+  replay = null,
+  images = 0,
+  counts = {},
+} = {}) {
+  const lines = [];
+  if (screenshot) {
+    lines.push({
+      key: "screenshot",
+      text: "1 screenshot of this page, taken when you opened the panel",
+    });
+  }
+  if (replay && replay.ready) {
+    lines.push({
+      key: "replay",
+      text:
+        typeof replay.seconds === "number"
+          ? `The recording of the ${formatDuration(replay.seconds)} before you opened the panel`
+          : "The recording (nothing recorded yet)",
+    });
+  }
+  if (images > 0) lines.push({ key: "images", text: `${plural(images, "image")} you added` });
+  const c = counts || {};
+  lines.push({
+    key: "logs",
+    text:
+      `The console and network log: ${plural(c.console || 0, "console line")}, ` +
+      `${plural(c.errors || 0, "error")}, ${plural(c.network || 0, "failed or slow request")}, ` +
+      `${plural(c.breadcrumbs || 0, "click")}`,
+  });
+  return lines;
 }
 
 // Assembles the multipart body `POST /v1/reports` expects (intake.ts's `form.get("report")`,
