@@ -442,15 +442,24 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     render();
   }
 
+  // A tab that was in the background comes back: ask at once rather than at the next poll, so
+  // a status that changed meanwhile (the issue closed, an answer posted) is what the reporter
+  // sees on return, not up to thirty seconds later.
+  function onVisibility() {
+    if (timer !== null && doc.visibilityState === "visible") refresh();
+  }
+
   function start() {
     stop();
     refresh();
     timer = setInterval(refresh, POLL_MS);
+    doc.addEventListener("visibilitychange", onVisibility);
   }
 
   function stop() {
     if (timer !== null) clearInterval(timer);
     timer = null;
+    doc.removeEventListener("visibilitychange", onVisibility);
   }
 
   function destroy() {
