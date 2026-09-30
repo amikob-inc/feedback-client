@@ -59,7 +59,10 @@ function setup({
       network: 3,
       breadcrumbs: 40,
     })),
-    replayEvents: vi.fn(() => [{ type: 2, timestamp: 1000, data: {} }]),
+    replayEvents: vi.fn(() => [
+      { type: 4, timestamp: 1000, data: {} },
+      { type: 2, timestamp: 1000, data: {} },
+    ]),
     options,
     ...apiOverrides,
   };
@@ -590,7 +593,7 @@ describe("What will be sent", () => {
     expect(lines()[0]).toBe("1 screenshot of this page, taken when you opened the panel");
     expect(lines()[1]).toContain("The recording of the 1 min 43 s before you opened the panel");
     expect(lines()[lines().length - 1]).toBe(
-      "The console and network log: 12 console lines, 1 error, 3 failed or slow requests, 40 clicks",
+      "The console and network log: 12 console lines, 1 error, 3 failed or slow requests, 40 page events",
     );
     form.destroy();
   });
@@ -711,7 +714,10 @@ describe("What will be sent", () => {
         element.remove();
         onClose();
       };
-      expect(events).toEqual([{ type: 2, timestamp: 1000, data: {} }]);
+      expect(events).toEqual([
+        { type: 4, timestamp: 1000, data: {} },
+        { type: 2, timestamp: 1000, data: {} },
+      ]);
       return { element, close: closeIt };
     });
     const { form } = setup({ openPreview });
@@ -857,6 +863,24 @@ describe("What will be sent", () => {
   it("says so instead of opening a preview when nothing was recorded", async () => {
     const openPreview = vi.fn();
     const { form } = setup({ openPreview, api: { replayEvents: () => [] } });
+    await form.prepare();
+    document.querySelector("[data-preview]").hidden = false;
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).not.toHaveBeenCalled();
+    expect(document.querySelector(".fbh-message").textContent).toBe(
+      "Nothing has been recorded yet.",
+    );
+    form.destroy();
+  });
+
+  // rrweb's Replayer needs at least two events and throws otherwise, which would surface as "the
+  // player could not be loaded" — an error no retry can fix.
+  it("says so instead of opening a preview when only one event was recorded", async () => {
+    const openPreview = vi.fn();
+    const { form } = setup({
+      openPreview,
+      api: { replayEvents: () => [{ type: 2, timestamp: 1000, data: {} }] },
+    });
     await form.prepare();
     document.querySelector("[data-preview]").hidden = false;
     document.querySelector("[data-preview]").click();

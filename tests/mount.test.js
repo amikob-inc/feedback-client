@@ -637,6 +637,65 @@ describe("the recording is frozen when the panel opens", () => {
     handle.destroy();
   });
 
+  it("lets the copy go once the panel is dismissed on its own, so a headless submit() is live", async () => {
+    const emitted = [];
+    let isOpen = false;
+    const { handle, transport } = mount(
+      { capture: { replay: true, screenshot: false } },
+      {
+        loadRecorder: recorderEmitting(emitted),
+        schedule: (fn) => fn(),
+        createPanel: () => ({
+          open() {
+            isOpen = true;
+          },
+          close() {
+            isOpen = false;
+          },
+          destroy() {},
+          isOpen: () => isOpen,
+        }),
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const emit = emitted[0];
+    await handle.open();
+    emit({ type: 3, timestamp: 2000, data: {} }, false);
+    // The reporter pressed Escape, X or the backdrop: the panel closed itself, and the mount's
+    // close() was never called.
+    isOpen = false;
+    await handle.submit({ text: "headless, after a dismissed panel" });
+    expect(await replayEventsSent(transport)).toEqual([1000, 2000]);
+    handle.destroy();
+  });
+
+  it("close() and destroy() let the copy go", async () => {
+    const { handle, emit, api } = await mountRecording();
+    await handle.open();
+    emit({ type: 3, timestamp: 2000, data: {} }, false);
+    expect(
+      api()
+        .replayEvents()
+        .map((e) => e.timestamp),
+    ).toEqual([1000]);
+    handle.close();
+    expect(
+      api()
+        .replayEvents()
+        .map((e) => e.timestamp),
+    ).toEqual([1000, 2000]);
+    await handle.open();
+    emit({ type: 3, timestamp: 3000, data: {} }, false);
+    expect(api().pending().replay).toEqual({ from: 1000, to: 2000, seconds: 1 });
+    handle.destroy();
+    expect(api().pending().replay).toEqual({ from: 1000, to: 3000, seconds: 2 });
+    expect(
+      api()
+        .replayEvents()
+        .map((e) => e.timestamp),
+    ).toEqual([1000, 2000, 3000]);
+  });
+
   it("pending() says what the next report carries, with counts, from the frozen copy", async () => {
     const { handle, emit, api } = await mountRecording();
     emit({ type: 3, timestamp: 61_000, data: {} }, false);

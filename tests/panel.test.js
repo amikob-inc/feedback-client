@@ -359,7 +359,10 @@ describe("createPanel", () => {
       }
       const { panel } = setup({
         api: {
-          replayEvents: () => [{ type: 2, timestamp: 1000, data: {} }],
+          replayEvents: () => [
+            { type: 4, timestamp: 1000, data: {} },
+            { type: 2, timestamp: 1000, data: {} },
+          ],
           loadPlayer: async () => ({ Player }),
         },
       });

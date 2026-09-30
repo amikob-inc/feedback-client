@@ -143,7 +143,10 @@ export function mountFeedback(rawOptions, deps = {}) {
   // the reporter pressed Send (owner's request, 2026-09-30): open() takes a copy of both
   // segments as they are at that moment, submit() sends the copy, and a successful submit lets
   // it go. A failed submit keeps it, so a retry sends the same recording; a headless submit()
-  // with no open() before it sends the live recording, as before.
+  // with no open() before it sends the live recording, as before. The copy counts only while the
+  // panel is open: the panel's own Escape, X and backdrop never reach close() here, so a headless
+  // submit() after the panel was dismissed must not carry a stale copy. A panel with no isOpen()
+  // (an app's own, or none at all) counts as open, so a submit right after open() still sends it.
   let frozen = null;
 
   function freezeReplay() {
@@ -151,7 +154,11 @@ export function mountFeedback(rawOptions, deps = {}) {
   }
 
   function recordingSource() {
-    if (frozen) return frozen;
+    const panelOpen =
+      panel && typeof panel.isOpen === "function"
+        ? safeCall(() => panel.isOpen(), true, "isOpen()")
+        : true;
+    if (frozen && panelOpen) return frozen;
     return replay ? replay.segments : null;
   }
 
@@ -363,6 +370,7 @@ export function mountFeedback(rawOptions, deps = {}) {
 
   function close() {
     wantOpen = false;
+    frozen = null;
     if (panel) panel.close();
   }
 
@@ -379,6 +387,7 @@ export function mountFeedback(rawOptions, deps = {}) {
     // nothing extra behind.
     destroyed = true;
     wantOpen = false;
+    frozen = null;
     if (button) button.removeEventListener("click", onButtonClick);
     if (panel) panel.destroy();
     panel = null;

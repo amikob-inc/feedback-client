@@ -16,7 +16,7 @@ describe("formatDuration", () => {
 describe("attachmentLines", () => {
   const counts = { console: 12, errors: 1, network: 3, breadcrumbs: 40 };
   const logs =
-    "The console and network log: 12 console lines, 1 error, 3 failed or slow requests, 40 clicks";
+    "The console and network log: 12 console lines, 1 error, 3 failed or slow requests, 40 page events";
 
   it("lists everything that goes, one line each, in order, with counts", () => {
     expect(
@@ -54,13 +54,13 @@ describe("attachmentLines", () => {
     expect(attachmentLines({})).toEqual([
       {
         key: "logs",
-        text: "The console and network log: 0 console lines, 0 errors, 0 failed or slow requests, 0 clicks",
+        text: "The console and network log: 0 console lines, 0 errors, 0 failed or slow requests, 0 page events",
       },
     ]);
     expect(
       attachmentLines({ counts: { console: 1, errors: 2, network: 1, breadcrumbs: 1 } })[0].text,
     ).toBe(
-      "The console and network log: 1 console line, 2 errors, 1 failed or slow request, 1 click",
+      "The console and network log: 1 console line, 2 errors, 1 failed or slow request, 1 page event",
     );
   });
 });

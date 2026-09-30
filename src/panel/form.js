@@ -296,7 +296,8 @@ export function createForm({
     // visibility covers the moment before openAnnotator() has resolved and activeAnnotator is set.
     if (activePreview || activeAnnotator || !annotatorMount.hidden || busy) return;
     const events = api.replayEvents ? safeCall(api.replayEvents, [], "replayEvents()") : [];
-    if (!Array.isArray(events) || !events.length) {
+    // rrweb's Replayer needs two events at least and throws on fewer, which a retry cannot fix.
+    if (!Array.isArray(events) || events.length < 2) {
       say("Nothing has been recorded yet.");
       return;
     }

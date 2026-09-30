@@ -119,6 +119,40 @@ describe("openPreview", () => {
     void again;
   });
 
+  it("leaves the events it was given untouched, though the player writes on the ones it gets", async () => {
+    const mount = document.createElement("div");
+    document.body.appendChild(mount);
+    const given = [
+      { type: 4, timestamp: 1000, data: { href: "http://x/" } },
+      { type: 2, timestamp: 1001, data: {} },
+    ];
+    const before = JSON.parse(JSON.stringify(given));
+    let received = null;
+    // rrweb's Replayer writes `delay` onto every event object it is handed.
+    class Player {
+      constructor({ props }) {
+        received = props.events;
+        for (const event of props.events) event.delay = 0;
+      }
+      addEventListener() {}
+      getMetaData() {
+        return { totalTime: 0 };
+      }
+      toggle() {}
+      pause() {}
+      $destroy() {}
+    }
+    const handle = openPreview({
+      doc: document,
+      mount,
+      events: given,
+      load: async () => ({ Player }),
+    });
+    await vi.waitFor(() => expect(received).not.toBe(null));
+    expect(given).toEqual(before);
+    handle.close();
+  });
+
   it("says so, and stays open, when the player cannot be loaded", async () => {
     const mount = document.createElement("div");
     document.body.appendChild(mount);

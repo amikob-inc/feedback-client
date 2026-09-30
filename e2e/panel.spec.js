@@ -59,11 +59,13 @@ async function ready(page, params = {}) {
   await page.waitForFunction(() => window.demoReady === true);
 }
 
-// Opens the panel and waits until it is showing a recording it really has: the recording
-// line appears only once the recorder has actually started, which is also the moment the replay
-// part is guaranteed to be in the next submit. Without this a fast test can submit before the
-// first snapshot exists and read an empty recording as a clean one.
+// Waits until the recorder has emitted, then opens the panel and waits for the recording line.
+// The recording is frozen at the click, so the wait has to come first: a click that beat the
+// recorder's first event (the recorder starts on an idle callback, after an import) would freeze
+// an empty recording, and no wait afterwards could put one into the report. `demoRecorded` is set
+// by the demo's wrapper around the recorder, in both modes.
 async function openWithRecording(page) {
+  await page.waitForFunction(() => window.demoRecorded === true);
   await page.click("#open-feedback");
   await expect(page.locator(".fbh-panel")).toBeVisible();
   await expect(page.locator(".fbh-sending-replay")).toBeVisible();
@@ -223,6 +225,8 @@ test("sends the recording from before the panel opened, however long the report 
   request,
 }) => {
   await ready(page, { real: "1" });
+  // The recorder running first, so the moment taken below is the moment the panel opens.
+  await page.waitForFunction(() => window.demoRecorded === true);
   // Something to record before the panel opens, then a moment for it to be recorded.
   for (let i = 0; i < 3; i += 1) await page.click("#host-click");
   await page.waitForTimeout(600);
@@ -247,6 +251,9 @@ test("sends the recording from before the panel opened, however long the report 
   // A little slack for the recorder's own emit timing; three seconds later than the click is
   // exactly what must not be there.
   expect(bundle.replay.last).toBeLessThanOrEqual(openedAt + 500);
+  // And the recording reaches up to the open, not only its first snapshot: the clicks just before
+  // it are in there.
+  expect(bundle.replay.last).toBeGreaterThanOrEqual(openedAt - 1500);
 });
 
 test("previews the recording almost full screen, and puts everything back on Close", async ({

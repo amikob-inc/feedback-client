@@ -47,7 +47,7 @@ export function attachmentLines({
     text:
       `The console and network log: ${plural(c.console || 0, "console line")}, ` +
       `${plural(c.errors || 0, "error")}, ${plural(c.network || 0, "failed or slow request")}, ` +
-      `${plural(c.breadcrumbs || 0, "click")}`,
+      `${plural(c.breadcrumbs || 0, "page event")}`,
   });
   return lines;
 }

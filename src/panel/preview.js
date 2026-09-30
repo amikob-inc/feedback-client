@@ -109,7 +109,10 @@ export function openPreview({
       player = new Player({
         target: stage,
         props: {
-          events,
+          // Shallow copies: rrweb's Replayer writes `delay` onto every event object it is given,
+          // and these objects are the frozen copy's own, shared with the live segments — handed
+          // over as they are, a preview would add a field to every event the report then sends.
+          events: events.map((event) => ({ ...event })),
           width,
           height,
           autoPlay: true,

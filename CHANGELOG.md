@@ -21,6 +21,9 @@ All notable changes to this package. Consumers install a git tag
 - "My reports" refreshes as soon as the tab becomes visible again, not at the next poll.
 - The headless API's panel context gains `pending()`, `replayEvents()` and `loadPlayer`;
   `MountDeps.loadPlayer` is the seam for a stand-in player.
+- Known gap: the line's duration and the preview cover both recording segments; a recording over
+  the hub's 8 MB cap is sent with its older segment dropped, or not at all, so the line can
+  promise more than is sent — to be fixed by applying the cut when the panel opens.
 
 ## 0.1.1 — 2026-09-22
 
