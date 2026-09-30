@@ -13,6 +13,7 @@ import {
   createSegments,
   idle,
   maskInputOptionsFor,
+  replayWindow,
   rrwebOptions,
   scrubReplayEvent,
   serializeReplay,
@@ -62,6 +63,54 @@ describe("createSegments", () => {
     expect(segments.current()).toEqual([]);
     expect(segments.events()).toEqual([]);
     expect(segments.count()).toBe(0);
+  });
+
+  it("snapshot() is a copy: later events and a later checkout do not reach it", () => {
+    const segments = createSegments();
+    segments.push({ type: 4, timestamp: 1000 }, true);
+    segments.push({ type: 3, timestamp: 2000 }, false);
+    const copy = segments.snapshot();
+    segments.push({ type: 3, timestamp: 3000 }, false);
+    segments.push({ type: 2, timestamp: 4000 }, true);
+    expect(copy.events().map((e) => e.timestamp)).toEqual([1000, 2000]);
+    expect(copy.count()).toBe(2);
+    expect(segments.count()).toBe(4);
+    // And the copy is a segments object in its own right: serializeReplay can drop its previous
+    // segment without touching the live one.
+    copy.dropPrevious();
+    expect(segments.previous().length + segments.current().length).toBe(4);
+  });
+
+  it("is seedable with both segments, which is what snapshot() is built from", () => {
+    const seeded = createSegments({ previous: [{ timestamp: 1 }], current: [{ timestamp: 2 }] });
+    expect(seeded.previous()).toEqual([{ timestamp: 1 }]);
+    expect(seeded.current()).toEqual([{ timestamp: 2 }]);
+    expect(seeded.events()).toEqual([{ timestamp: 1 }, { timestamp: 2 }]);
+  });
+});
+
+describe("replayWindow", () => {
+  it("is the span from the first to the last timestamp, in whole seconds", () => {
+    const segments = createSegments({
+      previous: [{ timestamp: 10_000 }, { timestamp: 40_000 }],
+      current: [{ timestamp: 41_000 }, { timestamp: 113_400 }],
+    });
+    expect(replayWindow(segments)).toEqual({ from: 10_000, to: 113_400, seconds: 103 });
+  });
+
+  it("ignores events without a numeric timestamp, and is null with none at all", () => {
+    expect(replayWindow(createSegments())).toBe(null);
+    expect(replayWindow(createSegments({ current: [{ type: 3 }, { timestamp: "x" }] }))).toBe(null);
+    expect(
+      replayWindow(
+        createSegments({ current: [{ type: 3 }, { timestamp: 5000 }, { timestamp: 5000 }] }),
+      ),
+    ).toEqual({ from: 5000, to: 5000, seconds: 0 });
+  });
+
+  it("does not spread a large event list onto the stack", () => {
+    const current = Array.from({ length: 200_000 }, (_, i) => ({ timestamp: i }));
+    expect(replayWindow(createSegments({ current })).seconds).toBe(200);
   });
 });
 
