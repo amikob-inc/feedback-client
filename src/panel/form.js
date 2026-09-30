@@ -5,7 +5,7 @@
 // what is going before it goes (spec §5.7). There is no page-copy attachment any more (removed
 // 2026-09-21, see src/bundle.js's own note): the strip only ever holds the screenshot and images,
 // and "What will be sent" never claims a page copy.
-import { CAPS, attachmentLines } from "../bundle.js";
+import { CAPS } from "../bundle.js";
 import {
   captureScreen as defaultCaptureScreen,
   screenCaptureSupported,
@@ -14,6 +14,7 @@ import { defaultSection } from "../options.js";
 import { warnOnce } from "../warn.js";
 import { openAnnotator as defaultOpenAnnotator } from "./annotate.js";
 import { activeWithin, clear, el } from "./dom.js";
+import { attachmentLines } from "./sending.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
 
