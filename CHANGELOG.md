@@ -3,6 +3,28 @@
 All notable changes to this package. Consumers install a git tag
 (`pnpm add github:amikob-inc/feedback-client#vX.Y.Z`), so every release is a tag and an entry here.
 
+## 0.3.0 — 2026-09-30
+
+- The recording a report carries is the minute or two **before the panel opened**, however long
+  the report takes to write: a copy of the recording is taken the moment the panel opens and that
+  copy is sent (a failed submit keeps it for the retry; the next open takes a fresh one). Until
+  now the window was cut at Send, so a report written slowly carried the minutes of writing and
+  nothing of what it was about.
+- "What will be sent" is a list, one line per thing that goes, with counts: the screenshot (and
+  that it was taken when the panel opened), the recording and the window it covers, the images
+  added, and the console and network log's line counts. The recording's line carries a
+  **Preview** button and the "Leave it out" switch; leaving it out strikes the line through and
+  moves nothing (the old one-line note re-wrapped and made the switch jump).
+- **Preview** plays the recording the report will carry, inside the panel at almost full screen,
+  with Play/Pause, the time and Close (Escape closes). The player is `rrweb-player`, the third
+  dependency fetched only on demand — never on page load.
+- "My reports" refreshes as soon as the tab becomes visible again, not at the next poll.
+- The headless API's panel context gains `pending()`, `replayEvents()` and `loadPlayer`;
+  `MountDeps.loadPlayer` is the seam for a stand-in player.
+- Known gap: the line's duration and the preview cover both recording segments; a recording over
+  the hub's 8 MB cap is sent with its older segment dropped, or not at all, so the line can
+  promise more than is sent — to be fixed by applying the cut when the panel opens.
+
 ## 0.2.0 — 2026-09-29
 
 - The automatic screenshot captures the **viewport**, not the page. Opening the panel used to

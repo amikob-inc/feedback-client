@@ -39,12 +39,13 @@ for (const [file, meta] of Object.entries(result.metafile.outputs)) {
   if (inputs.some((one) => one.includes("node_modules/@rrweb/record"))) manifest.recorder = url;
   else if (inputs.some((one) => one.includes("node_modules/modern-screenshot")))
     manifest.screenshot = url;
+  else if (inputs.some((one) => one.includes("node_modules/rrweb-player"))) manifest.player = url;
   else if (inputs.some((one) => one.includes("src/panel/"))) manifest.panel = url;
   else if (file.endsWith("/demo.js")) manifest.entry = url;
 }
-if (!manifest.recorder || !manifest.screenshot || !manifest.panel) {
+if (!manifest.recorder || !manifest.screenshot || !manifest.player || !manifest.panel) {
   throw new Error(
-    `the two lazy dependencies and the panel are not on chunks of their own: ${JSON.stringify(manifest)}`,
+    `the three lazy dependencies and the panel are not on chunks of their own: ${JSON.stringify(manifest)}`,
   );
 }
 await writeFile(new URL("demo/dist/chunks.json", root), `${JSON.stringify(manifest, null, 2)}\n`);

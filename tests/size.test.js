@@ -22,7 +22,7 @@ describe("the size budget", () => {
     expect(CEILING).toBeLessThanOrEqual(BUDGET);
   }, 30_000);
 
-  it("leaves the two lazy dependencies out of the bundle, and keeps them lazy", async () => {
+  it("leaves the three lazy dependencies out of the bundle, and keeps them lazy", async () => {
     const { imports } = await measure();
     // Read out of the built output, not out of the source: these are the imports the page-load
     // set still has to make at run time, and the kind is how it makes them. A dependency that had

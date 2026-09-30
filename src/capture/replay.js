@@ -85,9 +85,13 @@ export const SLIM_DOM = {
   headMetaVerification: true,
 };
 
-export function createSegments() {
-  let previous = [];
-  let current = [];
+// Two segments, the previous and the current, rotated at every checkout. Seedable so that
+// snapshot() — a copy taken when the panel opens (mount.js), so that the report carries what
+// happened *before* the reporter started writing rather than the minutes they spent writing —
+// is itself a full segments object that serializeReplay can consume and prune.
+export function createSegments({ previous: seedPrevious = [], current: seedCurrent = [] } = {}) {
+  let previous = seedPrevious.slice();
+  let current = seedCurrent.slice();
   return {
     push(event, isCheckout) {
       if (isCheckout && current.length) {
@@ -107,7 +111,25 @@ export function createSegments() {
       previous = [];
       current = [];
     },
+    snapshot: () => createSegments({ previous, current }),
   };
+}
+
+// What the recording covers: its first and last event's rrweb timestamp (ms since the epoch)
+// and the seconds between them. Null when nothing recorded carries a timestamp. A loop, not
+// Math.min(...stamps): two minutes of sampled mousemoves is thousands of events, and a spread
+// that long is a stack overflow waiting for a busier page.
+export function replayWindow(segments) {
+  let from = Infinity;
+  let to = -Infinity;
+  for (const event of segments.events()) {
+    const t = event && event.timestamp;
+    if (typeof t !== "number" || Number.isNaN(t)) continue;
+    if (t < from) from = t;
+    if (t > to) to = t;
+  }
+  if (from === Infinity) return null;
+  return { from, to, seconds: Math.round((to - from) / 1000) };
 }
 
 export function serializeReplay(segments, { max = REPLAY_JSON_MAX } = {}) {

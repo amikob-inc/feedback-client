@@ -28,7 +28,13 @@ function fakeAnnotatorDialog(doc, mount) {
   };
 }
 
-function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, openAnnotator } = {}) {
+function setup({
+  options: extra = {},
+  api: apiOverrides = {},
+  captureScreen,
+  openAnnotator,
+  openPreview,
+} = {}) {
   const options = normalizeOptions({
     hubUrl: "https://hub.example",
     app: "cad",
@@ -45,6 +51,18 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, ope
     // matching the pre-F4 behaviour. The dedicated "What will be sent" tests below override this
     // to exercise the pending/failed recorder cases.
     replayReady: Promise.resolve(true),
+    pending: vi.fn(() => ({
+      screenshot: true,
+      replay: { from: 1000, to: 104_000, seconds: 103 },
+      console: 12,
+      errors: 1,
+      network: 3,
+      breadcrumbs: 40,
+    })),
+    replayEvents: vi.fn(() => [
+      { type: 4, timestamp: 1000, data: {} },
+      { type: 2, timestamp: 1000, data: {} },
+    ]),
     options,
     ...apiOverrides,
   };
@@ -57,12 +75,14 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, ope
     onSubmitted,
     captureScreen,
     openAnnotator,
+    openPreview,
   });
   document.body.appendChild(form.element);
   return { api, form, onSubmitted, options };
 }
 
 const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => document.querySelectorAll(selector);
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -90,9 +110,7 @@ describe("createForm", () => {
     expect($(".fbh-strip").textContent).toContain("Screenshot");
     $(".fbh-strip button[data-remove]").click();
     expect($(".fbh-strip").textContent).not.toContain("Screenshot");
-    expect($(".fbh-note").textContent).toBe(
-      "What will be sent: a recording of the last minute or two, the console and network log.",
-    );
+    expect([...$$(".fbh-sending li")].map((li) => li.dataset.key)).toEqual(["replay", "logs"]);
     form.destroy();
   });
 
@@ -562,57 +580,314 @@ describe("createForm", () => {
   });
 });
 
-describe("the recording clause in 'What will be sent'", () => {
-  it("leaves the recording out while the recorder's real status is still unknown", async () => {
-    let resolveReady;
-    const replayReady = new Promise((resolve) => {
-      resolveReady = resolve;
-    });
-    const { form } = setup({ api: { replayReady } });
+describe("What will be sent", () => {
+  const lines = () =>
+    [...document.querySelectorAll(".fbh-sending li")].map((li) => li.textContent.trim());
+
+  it("is a list: the screenshot, the recording's window, the images, the log with counts", async () => {
+    const { form } = setup();
     await form.prepare();
-    expect($(".fbh-note").textContent).not.toContain("a recording");
-    resolveReady(true);
-    await vi.waitFor(() =>
-      expect($(".fbh-note").textContent).toContain("a recording of the last minute or two"),
+    expect(document.querySelector(".fbh-sending").getAttribute("aria-label")).toBe(
+      "What will be sent",
+    );
+    expect(lines()[0]).toBe("1 screenshot of this page, taken when you opened the panel");
+    expect(lines()[1]).toContain("The recording of the 1 min 43 s before you opened the panel");
+    expect(lines()[lines().length - 1]).toBe(
+      "The console and network log: 12 console lines, 1 error, 3 failed or slow requests, 40 page events",
     );
     form.destroy();
   });
 
-  it("never claims a recording once the recorder is confirmed to have failed to start", async () => {
+  it("adds the images line as images are added, and drops it when they go", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "a.png");
+    form.addImage(png(), "b.png");
+    expect(lines()).toContain("2 images you added");
+    document.querySelector("[data-image] [data-remove]").click();
+    expect(lines()).toContain("1 image you added");
+    form.destroy();
+  });
+
+  it("says nothing about a recording until the recorder has really started", async () => {
+    let settle;
+    const replayReady = new Promise((resolve) => {
+      settle = resolve;
+    });
+    const { form } = setup({ api: { replayReady } });
+    await form.prepare();
+    expect(document.querySelector(".fbh-sending-replay").hidden).toBe(true);
+    settle(true);
+    await vi.waitFor(() =>
+      expect(document.querySelector(".fbh-sending-replay").hidden).toBe(false),
+    );
+    form.destroy();
+  });
+
+  it("keeps the recording line hidden when the recorder failed to start", async () => {
     const { form } = setup({ api: { replayReady: Promise.resolve(false) } });
     await form.prepare();
-    // Give the already-settled promise's .then() a turn to run and re-render the note.
     await Promise.resolve();
     await Promise.resolve();
-    expect($(".fbh-note").textContent).not.toContain("a recording");
+    expect(document.querySelector(".fbh-sending-replay").hidden).toBe(true);
+    expect(lines().some((line) => line.includes("recording"))).toBe(false);
     form.destroy();
   });
 
-  it("mentions the recording once it is confirmed, even if that happens after the strip last rendered", async () => {
-    let resolveReady;
-    const replayReady = new Promise((resolve) => {
-      resolveReady = resolve;
-    });
-    const { form } = setup({ api: { replayReady } });
+  it("leaving the recording out strikes the line through and changes nothing else in the list", async () => {
+    const { form } = setup();
     await form.prepare();
-    // Nothing else touches the strip or the checkbox between prepare() and the recorder settling
-    // — the note still has to catch up on its own.
-    resolveReady(true);
-    await vi.waitFor(() =>
-      expect($(".fbh-note").textContent).toBe(
-        "What will be sent: a screenshot of this page, a recording of the last minute or two, the console and network log.",
-      ),
+    const before = lines();
+    const row = document.querySelector(".fbh-sending-replay");
+    const text = row.querySelector(".fbh-sending-text");
+    document.getElementById("fbh-no-replay").click();
+    expect(row.classList.contains("is-off")).toBe(true);
+    expect(document.querySelector(".fbh-sending-replay .fbh-sending-text")).toBe(text); // same node
+    expect(lines()).toEqual(before); // same words, same lines: nothing to re-wrap, nothing moves
+    document.getElementById("fbh-no-replay").click();
+    expect(row.classList.contains("is-off")).toBe(false);
+    form.destroy();
+  });
+
+  it("keeps focus on the recording switch when a render happens under it", async () => {
+    const { form } = setup();
+    await form.prepare();
+    const line = document.querySelector(".fbh-sending-replay");
+    document.getElementById("fbh-no-replay").focus();
+    form.addImage(png(), "a.png");
+    expect(document.activeElement.id).toBe("fbh-no-replay");
+    expect(document.querySelector(".fbh-sending-replay")).toBe(line);
+    form.destroy();
+  });
+
+  it("offers Preview only when something has been recorded", async () => {
+    const { form } = setup({
+      api: {
+        pending: () => ({
+          screenshot: true,
+          replay: null,
+          console: 0,
+          errors: 0,
+          network: 0,
+          breadcrumbs: 0,
+        }),
+      },
+    });
+    await form.prepare();
+    expect(document.querySelector(".fbh-sending-replay").hidden).toBe(false);
+    expect(document.querySelector("[data-preview]").hidden).toBe(true);
+    expect(document.querySelector(".fbh-sending-text").textContent).toBe(
+      "The recording (nothing recorded yet)",
     );
     form.destroy();
   });
 
-  it("still says nothing about a recording the reporter opted out of, even once the recorder is confirmed", async () => {
-    const { form } = setup({ api: { replayReady: Promise.resolve(true) } });
+  it("survives a pending() that throws: the list still says what it can", async () => {
+    const { form } = setup({
+      api: {
+        pending: () => {
+          throw new Error("host broke");
+        },
+      },
+    });
     await form.prepare();
-    $("#fbh-no-replay").checked = true;
-    $("#fbh-no-replay").dispatchEvent(new window.Event("change"));
-    await Promise.resolve();
-    expect($(".fbh-note").textContent).not.toContain("a recording");
+    expect(lines().length).toBeGreaterThan(0);
+    form.destroy();
+  });
+
+  it("re-reads the counts on every prepare(), so a reopened panel is current", async () => {
+    const { form, api } = setup();
+    await form.prepare();
+    api.pending.mockClear();
+    await form.prepare();
+    expect(api.pending).toHaveBeenCalled();
+    form.destroy();
+  });
+
+  it("Preview opens the dialog with the frozen events, widens the form, and hands focus back on close", async () => {
+    let closeIt;
+    const openPreview = vi.fn(({ mount, events, onClose }) => {
+      const element = document.createElement("div");
+      element.className = "fbh-preview";
+      mount.appendChild(element);
+      closeIt = () => {
+        element.remove();
+        onClose();
+      };
+      expect(events).toEqual([
+        { type: 4, timestamp: 1000, data: {} },
+        { type: 2, timestamp: 1000, data: {} },
+      ]);
+      return { element, close: closeIt };
+    });
+    const { form } = setup({ openPreview });
+    await form.prepare();
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(true);
+    expect(document.querySelector(".fbh-preview-mount").hidden).toBe(false);
+    // A second press while it is open does nothing.
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).toHaveBeenCalledTimes(1);
+    closeIt();
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(false);
+    expect(document.querySelector(".fbh-preview-mount").hidden).toBe(true);
+    expect(document.activeElement).toBe(document.querySelector("[data-preview]"));
+    form.destroy();
+  });
+
+  it("does not open the drawing dialog while the preview is open", async () => {
+    const openPreview = vi.fn(({ mount }) => {
+      const element = document.createElement("div");
+      element.className = "fbh-preview";
+      mount.appendChild(element);
+      return { element, close() {} };
+    });
+    const openAnnotator = vi.fn(({ mount }) =>
+      Promise.resolve(fakeAnnotatorDialog(document, mount)),
+    );
+    const { form } = setup({ openPreview, openAnnotator });
+    await form.prepare();
+    $("[data-preview]").click();
+    expect(openPreview).toHaveBeenCalledTimes(1);
+    $(".fbh-thumb-draw").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(openAnnotator).not.toHaveBeenCalled();
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(false);
+    form.destroy();
+  });
+
+  it("does not open the preview while the drawing dialog is open", async () => {
+    const openPreview = vi.fn();
+    const openAnnotator = vi.fn(({ mount }) =>
+      Promise.resolve(fakeAnnotatorDialog(document, mount)),
+    );
+    const { form } = setup({ openPreview, openAnnotator });
+    await form.prepare();
+    $(".fbh-thumb-draw").click();
+    await vi.waitFor(() => expect(openAnnotator).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    $("[data-preview]").click();
+    expect(openPreview).not.toHaveBeenCalled();
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(false);
+    form.destroy();
+  });
+
+  it("release() closes an open preview and puts the form back", async () => {
+    const closed = vi.fn();
+    const openPreview = vi.fn(({ mount, onClose }) => {
+      const element = document.createElement("div");
+      element.className = "fbh-preview";
+      mount.appendChild(element);
+      return {
+        element,
+        close() {
+          closed();
+          element.remove();
+          onClose();
+        },
+      };
+    });
+    const { form } = setup({ openPreview });
+    await form.prepare();
+    $("[data-preview]").click();
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(true);
+    form.release();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(false);
+    expect($(".fbh-preview-mount").hidden).toBe(true);
+    // Idempotent: a second release() has nothing left to close.
+    form.release();
+    expect(closed).toHaveBeenCalledTimes(1);
+    form.destroy();
+  });
+
+  it("release() closes an open drawing dialog and puts the form back", async () => {
+    const closed = vi.fn();
+    const openAnnotator = vi.fn(({ mount, onClose }) => {
+      const dialog = fakeAnnotatorDialog(document, mount);
+      return Promise.resolve({
+        element: dialog.element,
+        close() {
+          closed();
+          dialog.close();
+          onClose();
+        },
+      });
+    });
+    const { form } = setup({ openAnnotator });
+    await form.prepare();
+    $(".fbh-thumb-draw").click();
+    await vi.waitFor(() => expect(openAnnotator).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(true);
+    form.release();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(false);
+    expect($(".fbh-annotator-mount").hidden).toBe(true);
+    form.destroy();
+  });
+
+  it("closes a drawing dialog that finishes opening after release()", async () => {
+    const closed = vi.fn();
+    let finish;
+    const openAnnotator = vi.fn(
+      ({ mount, onClose }) =>
+        new Promise((resolve) => {
+          finish = () => {
+            const dialog = fakeAnnotatorDialog(document, mount);
+            resolve({
+              element: dialog.element,
+              close() {
+                closed();
+                dialog.close();
+                onClose();
+              },
+            });
+          };
+        }),
+    );
+    const { form } = setup({ openAnnotator });
+    await form.prepare();
+    $(".fbh-thumb-draw").click();
+    await vi.waitFor(() => expect(openAnnotator).toHaveBeenCalledTimes(1));
+    form.release();
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(false);
+    expect($(".fbh-annotator-mount").hidden).toBe(true);
+    form.destroy();
+  });
+
+  it("says so instead of opening a preview when nothing was recorded", async () => {
+    const openPreview = vi.fn();
+    const { form } = setup({ openPreview, api: { replayEvents: () => [] } });
+    await form.prepare();
+    document.querySelector("[data-preview]").hidden = false;
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).not.toHaveBeenCalled();
+    expect(document.querySelector(".fbh-message").textContent).toBe(
+      "Nothing has been recorded yet.",
+    );
+    form.destroy();
+  });
+
+  // rrweb's Replayer needs at least two events and throws otherwise, which would surface as "the
+  // player could not be loaded" — an error no retry can fix.
+  it("says so instead of opening a preview when only one event was recorded", async () => {
+    const openPreview = vi.fn();
+    const { form } = setup({
+      openPreview,
+      api: { replayEvents: () => [{ type: 2, timestamp: 1000, data: {} }] },
+    });
+    await form.prepare();
+    document.querySelector("[data-preview]").hidden = false;
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).not.toHaveBeenCalled();
+    expect(document.querySelector(".fbh-message").textContent).toBe(
+      "Nothing has been recorded yet.",
+    );
     form.destroy();
   });
 });

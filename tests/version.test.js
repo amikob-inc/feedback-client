@@ -10,7 +10,7 @@ describe("version", () => {
   });
 
   it("is the client string the report carries", () => {
-    expect(CLIENT_ID).toBe("feedback-client/0.2.0");
+    expect(CLIENT_ID).toBe("feedback-client/0.3.0");
     expect(CLIENT_ID).toBe(`feedback-client/${pkg.version}`);
   });
 });

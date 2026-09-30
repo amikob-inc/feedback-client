@@ -82,6 +82,19 @@ export interface PanelApi extends FeedbackHandle {
   captureScreenshot(): Promise<Blob | null>;
   /** Settles once, to whether a recording is really being made. */
   replayReady: Promise<boolean>;
+  /** What the next report will carry, with counts; the panel's "What will be sent" list reads it. */
+  pending(): {
+    screenshot: boolean;
+    replay: { from: number; to: number; seconds: number } | null;
+    console: number;
+    errors: number;
+    network: number;
+    breadcrumbs: number;
+  };
+  /** The recording's events as the report would carry them: frozen at open(), the live ones headless. */
+  replayEvents(): unknown[];
+  /** `MountDeps.loadPlayer`, passed through for the preview. */
+  loadPlayer?: () => Promise<unknown>;
   options: NormalizedOptions;
 }
 
@@ -95,6 +108,7 @@ export interface MountDeps {
   schedule?: (fn: () => void) => void;
   loadRecorder?: () => Promise<unknown>;
   loadScreenshot?: () => Promise<unknown>;
+  loadPlayer?: () => Promise<unknown>;
   /** Built the first time open() is called; may return a promise, as the built-in loader does. */
   createPanel?: (context: {
     api: PanelApi;

@@ -425,6 +425,22 @@ describe("createList", () => {
     list.destroy();
   });
 
+  it("refreshes when the tab becomes visible again, while started, and not after stop", async () => {
+    const { list, api } = setup();
+    list.start();
+    await vi.waitFor(() => expect(api.list).toHaveBeenCalledTimes(1));
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new window.Event("visibilitychange"));
+    expect(api.list).toHaveBeenCalledTimes(1);
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new window.Event("visibilitychange"));
+    await vi.waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+    list.stop();
+    document.dispatchEvent(new window.Event("visibilitychange"));
+    expect(api.list).toHaveBeenCalledTimes(2);
+    list.destroy();
+  });
+
   it("says so when there is nothing yet", async () => {
     const { list } = setup({ list: async () => ({ items: [], nextCursor: null }) });
     await list.refresh();

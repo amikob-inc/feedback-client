@@ -2,7 +2,7 @@
 // the browser test needs to ask the awkward questions. Everything is driven from the query string
 // so a person can reach the same states by hand.
 //
-//   ?real=1       the bundle tools/build-demo.mjs produced, which resolves the two lazy
+//   ?real=1       the bundle tools/build-demo.mjs produced, which resolves the lazy
 //                 dependencies' bare specifiers — the only mode that runs the real recorder and
 //                 the real screenshot. Without it the sources are loaded straight from disk and
 //                 stand-ins take their place, because a browser with no bundler cannot resolve
@@ -104,19 +104,64 @@ async function makePng(width, height, color) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-// Stand-ins for the two lazy dependencies, used in every mode except `?real=1`. They have the
-// same shape the library calls: `domToBlob` for the screenshot, and a `record()` that emits a
-// full snapshot straight away and an incremental event twice a second, returning the stop handle
-// the library insists on.
+// `window.demoRecorded` turns true the first time the recorder emits, in both modes, so a browser
+// test can wait for a recording to exist before it opens the panel: the recording is frozen at
+// the click, and a click that beats the recorder's first event freezes an empty one. The wrapper
+// passes every event on unchanged; it only watches for the first.
+function watchedRecorder(load) {
+  return async () => {
+    const module = await load();
+    const record = module.record || module.default;
+    return {
+      record(options) {
+        return record({
+          ...options,
+          emit(event, isCheckout) {
+            window.demoRecorded = true;
+            return options.emit(event, isCheckout);
+          },
+        });
+      },
+    };
+  };
+}
+
+// Stand-ins for the three lazy dependencies, used in every mode except `?real=1`. They have the
+// same shape the library calls: `domToBlob` for the screenshot, a `Player` for the preview, and a
+// `record()` that emits a Meta event and a full snapshot straight away and an incremental event
+// twice a second, returning the stop handle the library insists on.
 const fakes = {
   // 1280 × 800 on purpose: wider than the panel, so the annotator's canvas is displayed scaled
   // down and the mapping from a pointer position to an image pixel has real work to do.
   loadScreenshot: async () => ({ domToBlob: async () => makePng(1280, 800, "#8ec5ff") }),
-  loadRecorder: async () => ({
+  loadRecorder: watchedRecorder(async () => ({
     record(options) {
-      options.emit({ type: 2, timestamp: Date.now(), data: { node: "demo snapshot" } }, true);
+      // A Meta event and a full snapshot together, as rrweb starts every recording: the preview
+      // needs two events at least, and a panel opened the moment the recorder starts has these.
+      const now = Date.now();
+      options.emit({ type: 4, timestamp: now, data: { href: location.href } }, true);
+      options.emit({ type: 2, timestamp: now, data: { node: "demo snapshot" } }, false);
       const timer = setInterval(() => options.emit({ type: 3, timestamp: Date.now() }, false), 500);
       return () => clearInterval(timer);
+    },
+  })),
+  // The player, for the default mode: shows that the preview was asked for and how many events
+  // it got, instead of playing them.
+  loadPlayer: async () => ({
+    Player: class {
+      constructor({ target, props }) {
+        const note = document.createElement("p");
+        note.id = "fake-player";
+        note.textContent = `fake player: ${props.events.length} events`;
+        target.appendChild(note);
+      }
+      addEventListener() {}
+      getMetaData() {
+        return { startTime: 0, endTime: 0, totalTime: 0 };
+      }
+      toggle() {}
+      pause() {}
+      $destroy() {}
     },
   }),
 };
@@ -148,7 +193,7 @@ const feedback = mountFeedback(
       blank: [".secret"],
     },
   },
-  useFakes ? fakes : {},
+  useFakes ? fakes : { loadRecorder: watchedRecorder(() => import("@rrweb/record")) },
 );
 
 document.getElementById("toggle-theme").addEventListener("click", () => {

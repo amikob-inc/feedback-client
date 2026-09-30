@@ -5,7 +5,7 @@
 // what is going before it goes (spec §5.7). There is no page-copy attachment any more (removed
 // 2026-09-21, see src/bundle.js's own note): the strip only ever holds the screenshot and images,
 // and "What will be sent" never claims a page copy.
-import { CAPS, describeAttachments } from "../bundle.js";
+import { CAPS } from "../bundle.js";
 import {
   captureScreen as defaultCaptureScreen,
   screenCaptureSupported,
@@ -14,6 +14,8 @@ import { defaultSection } from "../options.js";
 import { warnOnce } from "../warn.js";
 import { openAnnotator as defaultOpenAnnotator } from "./annotate.js";
 import { activeWithin, clear, el } from "./dom.js";
+import { openPreview as defaultOpenPreview } from "./preview.js";
+import { attachmentLines } from "./sending.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
 
@@ -68,6 +70,7 @@ export function createForm({
   onSubmitted = () => {},
   captureScreen = defaultCaptureScreen,
   openAnnotator = defaultOpenAnnotator,
+  openPreview = defaultOpenPreview,
 }) {
   let screenshot = null;
   let includeReplay = true;
@@ -84,6 +87,8 @@ export function createForm({
   // pointermove/pointerup/keydown listeners live on `doc`, independent of this form's own DOM, so
   // an open dialog would otherwise keep running after the form itself is gone.
   let activeAnnotator = null;
+  let activePreview = null;
+  let releases = 0;
   let destroyed = false;
 
   const sectionSelect = el(doc, "select", { id: "fbh-section", class: "fbh-input" });
@@ -100,7 +105,44 @@ export function createForm({
   // Hidden until a Draw button opens it; the panel's own DOM, not the annotator's, controls
   // visibility (annotate.js knows nothing about the form around it). See annotate() below.
   const annotatorMount = el(doc, "div", { class: "fbh-annotator-mount", hidden: true });
-  const note = el(doc, "p", { class: "fbh-note" });
+  const previewMount = el(doc, "div", { class: "fbh-preview-mount", hidden: true });
+  // "What will be sent" (spec §5.4), as a list with counts (owner's request, 2026-09-30). The
+  // recording's line is one node that lives for the life of the form — its text, its Preview
+  // button and its "Leave it out" switch — and is never rebuilt: leaving the recording out only
+  // adds a class that strikes the text through, so the words, the wrapping and the position of
+  // everything below stay exactly as they were. Rebuilding the line, or changing its words, made
+  // the switch itself jump under the pointer (owner's finding, 2026-09-30).
+  const sending = el(doc, "ul", { class: "fbh-sending", "aria-label": "What will be sent" });
+  const replayText = el(doc, "span", { class: "fbh-sending-text" });
+  const previewButton = el(doc, "button", {
+    type: "button",
+    class: "fbh-link",
+    "data-preview": true,
+    hidden: true,
+    text: "Preview",
+    onClick: () => preview(),
+  });
+  const replayToggle = el(doc, "input", {
+    id: "fbh-no-replay",
+    type: "checkbox",
+    onChange: () => {
+      includeReplay = !replayToggle.checked;
+      replayLine.classList.toggle("is-off", !includeReplay);
+    },
+  });
+  const replayLine = el(
+    doc,
+    "li",
+    { class: "fbh-sending-item fbh-sending-replay", "data-key": "replay", hidden: true },
+    [
+      replayText,
+      previewButton,
+      el(doc, "label", { class: "fbh-check fbh-inline" }, [
+        replayToggle,
+        el(doc, "span", { text: "Leave it out" }),
+      ]),
+    ],
+  );
   // aria-atomic: the whole line is replaced on every update (never a partial diff a reporter
   // could misread as the complete list of attachments), so a screen reader must announce it whole
   // too. role="status" + aria-live="polite" covers both the informational states (sending, sent,
@@ -137,14 +179,6 @@ export function createForm({
     onClick: () => fileInput.click(),
   });
   const actions = el(doc, "div", { class: "fbh-actions" }, [attachButton, fileInput]);
-  const replayToggle = el(doc, "input", {
-    id: "fbh-no-replay",
-    type: "checkbox",
-    onChange: () => {
-      includeReplay = !replayToggle.checked;
-      renderNote();
-    },
-  });
   const submitButton = el(doc, "button", {
     id: "fbh-submit",
     type: "button",
@@ -172,12 +206,9 @@ export function createForm({
     ]),
     strip,
     annotatorMount,
+    previewMount,
     actions,
-    note,
-    el(doc, "label", { class: "fbh-check" }, [
-      replayToggle,
-      el(doc, "span", { text: "Leave the recording out" }),
-    ]),
+    sending,
     el(doc, "div", { class: "fbh-status-row" }, [message, retrySlot]),
     el(doc, "div", { class: "fbh-submit-row" }, [submitButton]),
   ]);
@@ -218,20 +249,71 @@ export function createForm({
     urls.length = 0;
   }
 
-  function renderNote() {
-    // No `dom`: the page copy was removed on 2026-09-21 (note at the top), and this line is what
-    // the reporter reads before they send — it must name only what is really attached, never
-    // something that is not. `describeAttachments` never took a `dom` argument to begin with any
-    // more, so there is nothing here to withhold.
-    //
-    // The recording clause is driven by `replayAttached`, not the static `options.capture.replay`
-    // flag: the flag only says the app asked for a recording, and stays true even where rrweb
-    // never actually starts. `replayAttached` is the answer `api.replayReady` gave once it
-    // settled, so the note can never promise a recording the bundle will not actually carry.
-    note.textContent = describeAttachments({
-      screenshot,
-      replay: includeReplay && replayAttached ? true : null,
-      images,
+  // Reads what the next report will carry (api.pending(): a host-side answer, so guarded like
+  // every other hook) and rebuilds the list — every line but the recording's, which is the same
+  // node every time and only has its words and its Preview button updated in place.
+  function renderSending() {
+    const empty = {
+      screenshot: false,
+      replay: null,
+      console: 0,
+      errors: 0,
+      network: 0,
+      breadcrumbs: 0,
+    };
+    const pending = (api.pending && safeCall(() => api.pending(), empty, "pending()")) || empty;
+    const lines = attachmentLines({
+      screenshot: !!screenshot,
+      replay: { ready: replayAttached, seconds: pending.replay ? pending.replay.seconds : null },
+      images: images.length,
+      counts: pending,
+    });
+    const replay = lines.find((line) => line.key === "replay");
+    replayLine.hidden = !replay;
+    if (replay) replayText.textContent = replay.text;
+    previewButton.hidden = !(replay && pending.replay);
+    // Only the other lines are replaced: the recording's node is never detached (a node taken out
+    // of the document loses focus, and the reporter may be on its switch), so it is placed once
+    // and the fresh lines are put before or after it. Until it has a line of its own it waits,
+    // hidden, in the place it will take.
+    for (const child of [...sending.children]) if (child !== replayLine) child.remove();
+    const fresh = (line) =>
+      el(doc, "li", { class: "fbh-sending-item", "data-key": line.key, text: line.text });
+    if (replayLine.parentNode !== sending) sending.appendChild(replayLine);
+    for (const line of lines) {
+      if (line.key === "replay") continue;
+      if (line.key === "screenshot") sending.insertBefore(fresh(line), replayLine);
+      else sending.appendChild(fresh(line));
+    }
+  }
+
+  // Opens the recording's preview in the form, the panel widened as for drawing; while it is
+  // open the strip and Send are dimmed and inert like the annotator does it. The player gets the
+  // frozen events the report would carry (api.replayEvents()), never the live recording.
+  function preview() {
+    // Never beside the drawing dialog: the panel's trap scopes Tab to whichever nested dialog it
+    // finds first, so two open at once would leave one of them unreachable. The mount's
+    // visibility covers the moment before openAnnotator() has resolved and activeAnnotator is set.
+    if (activePreview || activeAnnotator || !annotatorMount.hidden || busy) return;
+    const events = api.replayEvents ? safeCall(api.replayEvents, [], "replayEvents()") : [];
+    // rrweb's Replayer needs two events at least and throws on fewer, which a retry cannot fix.
+    if (!Array.isArray(events) || events.length < 2) {
+      say("Nothing has been recorded yet.");
+      return;
+    }
+    element.classList.add("fbh-form-previewing");
+    previewMount.hidden = false;
+    activePreview = openPreview({
+      doc,
+      mount: previewMount,
+      events,
+      ...(api.loadPlayer ? { load: api.loadPlayer } : {}),
+      onClose: () => {
+        activePreview = null;
+        previewMount.hidden = true;
+        element.classList.remove("fbh-form-previewing");
+        if (!destroyed) previewButton.focus();
+      },
     });
   }
 
@@ -243,7 +325,7 @@ export function createForm({
   if (api.replayReady && typeof api.replayReady.then === "function") {
     api.replayReady.then((ready) => {
       replayAttached = !!ready;
-      renderNote();
+      renderSending();
     });
   }
 
@@ -329,7 +411,7 @@ export function createForm({
         ),
       );
     });
-    renderNote();
+    renderSending();
     if (focus !== undefined) {
       const { index, selector = "[data-remove]" } =
         typeof focus === "number" ? { index: focus } : focus;
@@ -347,11 +429,14 @@ export function createForm({
   // old Draw button is already disconnected and `stop` correctly leaves it alone); Cancel, Escape
   // and a load failure never touch the strip, so they need this to get back to where they started.
   async function annotate(blob, onDone) {
+    // Never beside the preview, and never twice (see preview() above).
+    if (activePreview || activeAnnotator || !annotatorMount.hidden) return;
     // The control that opened the editor, looked up through the form's own root rather than the
     // document's: inside the shadow root `doc.activeElement` is the host element, so asking the
     // document would hand back the panel's wrapper and "focus goes back where it came from"
     // would put it on something that cannot hold focus at all.
     const trigger = activeWithin(element);
+    const opened = releases;
     annotatorMount.hidden = false;
     element.classList.add("fbh-form-annotating");
     const stop = () => {
@@ -372,6 +457,12 @@ export function createForm({
     // finishes opening *after* destroy() ran would otherwise never be told to close at all.
     if (destroyed) {
       annotator.close(); // a no-op {element: null, close(){}} when it never opened, either way
+      return;
+    }
+    // The same for a panel closed while it was opening: release() could not reach it yet.
+    if (releases !== opened) {
+      annotator.close();
+      if (!annotatorMount.hidden) stop();
       return;
     }
     if (!annotator.element) {
@@ -546,6 +637,7 @@ export function createForm({
     fill(typeSelect, options.types, options.types[0]);
     includeReplay = true;
     replayToggle.checked = false;
+    replayLine.classList.remove("is-off");
     if (screenCaptureSupported(win) && !element.querySelector("#fbh-capture")) {
       actions.insertBefore(
         el(doc, "button", {
@@ -589,7 +681,15 @@ export function createForm({
     }
   }
 
+  // Called by the panel's close(), before it hands focus back to the page. A nested dialog left
+  // open behind a hidden overlay would keep playing (the preview) and keep its keydown listener
+  // on `doc`, swallowing the host page's next Escape — so both are closed here; their onClose
+  // restores the form's classes and mounts. `releases` tells an annotator still opening that the
+  // panel closed under it.
   function release() {
+    releases += 1;
+    if (activePreview) activePreview.close();
+    if (activeAnnotator) activeAnnotator.close();
     if (!pasting) return;
     doc.removeEventListener("paste", onPaste);
     pasting = false;
@@ -599,6 +699,7 @@ export function createForm({
     destroyed = true;
     release();
     if (activeAnnotator) activeAnnotator.close();
+    if (activePreview) activePreview.close();
     releaseUrls();
     element.remove();
   }

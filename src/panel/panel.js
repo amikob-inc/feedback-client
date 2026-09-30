@@ -90,12 +90,13 @@ export function createPanel({ api, options, doc }) {
   let previousOverflow = null;
 
   // Scopes the trap to whatever the *topmost* dialog is. Ordinarily that is the whole panel; but
-  // annotate.js opens its own dialog (class "fbh-annotator", spec §5.4) inside the form while the
-  // panel is open — a trap inside a trap — and that inner dialog has no Tab-cycling of its own
-  // (only its own Escape). Scoping to it here, whenever it is present, is what keeps Tab from
-  // wandering back out into the (visually dimmed, but otherwise ordinary) form and list behind it.
-  function annotatorDialog() {
-    return shadow.querySelector(".fbh-annotator");
+  // two nested dialogs open inside the form while the panel is open — annotate.js's drawing
+  // dialog (class "fbh-annotator", spec §5.4) and preview.js's recording preview (class
+  // "fbh-preview") — a trap inside a trap, and neither has Tab-cycling of its own (only its own
+  // Escape). Scoping to whichever is present is what keeps Tab from wandering back out into the
+  // (visually dimmed, but otherwise ordinary) form and list behind it.
+  function nestedDialog() {
+    return shadow.querySelector(".fbh-annotator, .fbh-preview");
   }
 
   function focusable(scope) {
@@ -112,16 +113,16 @@ export function createPanel({ api, options, doc }) {
   function onKeydown(event) {
     if (event.key === "Escape") {
       // The nested dialog owns Escape while it is open — closing itself, not the whole panel.
-      // Its own listener lives on `doc` (annotate.js's openAnnotator), reached only if this
-      // handler leaves the event alone: stopping it here, as the normal case below does, would
-      // mean Escape from inside the annotator always took out both at once.
-      if (annotatorDialog()) return;
+      // Its own listener lives on `doc` (annotate.js's openAnnotator, preview.js's openPreview),
+      // reached only if this handler leaves the event alone: stopping it here, as the normal case
+      // below does, would mean Escape from inside a nested dialog always took out both at once.
+      if (nestedDialog()) return;
       event.stopPropagation();
       close();
       return;
     }
     if (event.key !== "Tab") return;
-    const items = focusable(annotatorDialog() || shadow);
+    const items = focusable(nestedDialog() || shadow);
     if (!items.length) return;
     const index = items.indexOf(shadow.activeElement);
     if (event.shiftKey && index <= 0) {
