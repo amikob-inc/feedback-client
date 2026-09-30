@@ -24,6 +24,10 @@ All notable changes to this package. Consumers install a git tag
   the list's own live region. A refusal (`409 not_deletable`, once a fix is in progress or the
   issue is fixed or closed) is shown in the row. A just-sent report is deletable at once, as the
   hub would list it. Needs feedback-hub with D17 (2026-09-29).
+- Drawing on a screenshot gets almost the whole screen: while the drawing dialog is open the panel
+  widens to 96% of the window and the picture is scaled to fit nearly all of it, proportions
+  kept, instead of a 460 px column with the picture capped at 40% of the height (owner's request,
+  2026-09-30). The panel is back to its ordinary size the moment the dialog closes.
 - `fixtures/status-cases.json` carries `canDelete` per case; the digest changes here and in the
   hub.
 - Page load: 11.7 KB gzipped; the panel 9.8 KB; the new viewport module 1.7 KB on demand.

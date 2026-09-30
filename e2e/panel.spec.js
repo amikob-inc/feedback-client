@@ -598,6 +598,20 @@ test("draws on the screenshot at the image's own resolution", async ({ page, req
   await page.click(".fbh-thumb-draw");
   await expect(page.locator(".fbh-annotator-canvas")).toBeVisible({ timeout: 3000 });
 
+  // While the drawing dialog is open the panel takes almost the whole window and the picture is
+  // shown well beyond the ordinary 460px column; once it closes the panel is its ordinary size.
+  const panelWidth = () =>
+    page.evaluate(
+      () =>
+        document
+          .getElementById("fbh-host")
+          .shadowRoot.querySelector(".fbh-panel")
+          .getBoundingClientRect().width,
+    );
+  const viewport = page.viewportSize();
+  expect(await panelWidth()).toBeGreaterThanOrEqual(viewport.width * 0.9);
+  expect((await page.locator(".fbh-annotator-canvas").boundingBox()).width).toBeGreaterThan(600);
+
   const canvas = await page.evaluate(() => {
     const node = document
       .getElementById("fbh-host")
@@ -616,7 +630,10 @@ test("draws on the screenshot at the image's own resolution", async ({ page, req
   expect(canvas.width).toBe(1280);
   expect(canvas.height).toBe(800);
   expect(canvas.dpr).toBe(2);
-  expect(canvas.rect.width).toBeLessThan(canvas.width / 2);
+  // Displayed smaller than its own pixels (the wide dialog fits it to the window, which is
+  // narrower than the 1280px stand-in), so the mapping from a pointer position to an image pixel
+  // still has real work to do.
+  expect(canvas.rect.width).toBeLessThan(canvas.width);
 
   const y = canvas.rect.y + canvas.rect.height * 0.3;
   const from = canvas.rect.x + canvas.rect.width * 0.25;
@@ -627,6 +644,8 @@ test("draws on the screenshot at the image's own resolution", async ({ page, req
   await page.mouse.move(to, y, { steps: 5 });
   await page.mouse.up();
   await page.click("[data-save]");
+  await expect(page.locator(".fbh-annotator-canvas")).toBeHidden();
+  expect(await panelWidth()).toBeLessThanOrEqual(480); // the 460px column plus its border
   await expect(page.locator(".fbh-annotator")).toBeHidden();
 
   await page.fill("#fbh-text", "with a mark on it");

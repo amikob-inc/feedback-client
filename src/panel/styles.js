@@ -156,6 +156,16 @@ padding: 10px; border: 1px solid var(--fbh-border); border-radius: 10px; backgro
 }
 .fbh-annotator-stage { max-height: 40vh; overflow: auto; }
 .fbh-annotator-canvas { max-width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+/* While the drawing dialog is open the panel takes almost the whole screen and the picture gets
+   nearly all of it (owner's request, 2026-09-30): a screenshot of a wide screen shrunk into a
+   460px column is too small to mark anything on. Scaled to fit both ways, proportions kept; the
+   stroke mapping reads the displayed size, so the drawing lands where it was made whatever the
+   scale. Back to the ordinary size the moment the dialog closes. */
+.fbh-panel:has(.fbh-form-annotating) { width: min(96vw, 1800px); max-height: 96vh; }
+.fbh-form-annotating .fbh-annotator-stage { max-height: none; }
+.fbh-form-annotating .fbh-annotator-canvas {
+display: block; width: auto; height: auto; max-width: 100%; max-height: calc(96vh - 230px); margin: 0 auto;
+}
 .fbh-annotator-hint { margin: 6px 0 0; font-size: 11px; color: var(--fbh-muted); }
 .fbh-annotator-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
 .fbh-annotator-status { margin: 0; font-size: 11.5px; color: var(--fbh-danger); }
