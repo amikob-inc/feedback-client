@@ -122,20 +122,6 @@ export function imageName(blob, index) {
   return blob.type === "image/jpeg" ? `${index + 1}.jpg` : `${index + 1}.png`;
 }
 
-// The "what will be sent" line the panel shows before submit (spec §5.4), so leaving the
-// recording out is an informed choice rather than a surprise. Names only what is actually
-// present; the console and network log are always named last because they are always sent when
-// capture is on (there is no separate opt-out for them the way there is for the recording).
-export function describeAttachments({ screenshot = null, replay = null, images = [] } = {}) {
-  const parts = [];
-  if (screenshot) parts.push("a screenshot of this page");
-  if (replay) parts.push("a recording of the last minute or two");
-  if (images.length === 1) parts.push("1 image you added");
-  else if (images.length > 1) parts.push(`${images.length} images you added`);
-  parts.push("the console and network log");
-  return `What will be sent: ${parts.join(", ")}.`;
-}
-
 // Assembles the multipart body `POST /v1/reports` expects (intake.ts's `form.get("report")`,
 // `"screenshot"`, `"replay"`, and repeated `"image"` — field names checked against that file, not
 // guessed from the spec prose; the `"dom"` part that file also accepts is optional there and this

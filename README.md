@@ -12,7 +12,7 @@ pnpm add github:amikob-inc/feedback-client#v0.1.0
 ```
 
 The package is plain ES modules under `src/`; your bundler (Vite in both dashboards) does the rest.
-`@rrweb/record` and `modern-screenshot` come with it and are loaded with dynamic `import()`, so
+`@rrweb/record`, `modern-screenshot` and `rrweb-player` come with it and are loaded with dynamic `import()`, so
 they land in their own chunks and only when they are needed.
 
 ## Mount it
@@ -52,14 +52,28 @@ Every function is called lazily, at open or at submit, so mounting reads no app 
 module can be imported in any order. An unknown option throws at mount, so a typo is found in
 development. `getToken` returning `null` disables submit with "Sign in to report".
 
-`mountFeedback` returns `{ open, close, submit(fields), list(), reply(id, text), retry(id), destroy }`.
-An app that wants its own UI can use those and never open the built-in panel.
+`mountFeedback` returns
+`{ open, close, submit(fields), list(), reply(id, text), retry(id), remove(id), destroy }`. An app
+that wants its own UI can use those and never open the built-in panel.
+
+`remove(id)` deletes one of the reporter's own reports. Whether it may go is the hub's call, sent
+with every listing as `canDelete` on the item (v0.2.0, hub D17): yes while no issue exists for it
+or its issue is still open with no fix under way — that issue is closed as not planned with it —
+and no once a fix is in progress or the issue is fixed or closed. The panel shows a Delete button
+exactly where the hub said yes, asks once in the row (naming the issue it will close), and takes
+the row away.
 
 `open()` returns a promise. The panel is loaded on demand — it is fetched the first time it is
 opened, never on page load — so the promise resolves once the panel is on the page, and code that
 inspects the DOM right after calling `open()` sees nothing yet. It never rejects: if the panel's
 chunk cannot be fetched (offline, a deployment that replaced it) the library warns once and
 resolves, and the next `open()` tries again. Wiring `open` to a button needs no `await`.
+
+The recording a report carries is frozen when the panel opens: a copy of the minute or two before
+that moment is taken, and that copy is what is sent, however long the report takes to write. A
+failed submit keeps the copy for the retry; the next `open()` takes a fresh one. The panel lists
+what will be sent, and the recording's line has a **Preview** that plays the copy in place (the
+player is fetched only then) and a switch to leave it out.
 
 ## Theming
 
@@ -107,7 +121,9 @@ Passwords are always masked in the replay and the click trail. `maskAllInputs: t
 typed value in both. `blank: [".sku-price"]` blanks matching elements in the replay
 (rrweb's `blockSelector`), withholds them from the click trail, and empties them in the screenshot
 — which the browser test checks by reading the sent picture back as pixels. The screenshot is a
-picture of what is on screen: it masks passwords, empties `blank` elements, and under
+picture of what is on screen — the viewport as the reporter sees it, at their scroll position,
+never the page beyond it (v0.2.0; the whole-page walk froze the host page for seconds and often
+produced no picture at all, see `src/capture/viewport.js`): it masks passwords, empties `blank` elements, and under
 `maskAllInputs: true` masks every typed value, a textarea's text, a select's chosen option and
 editable text — at least what the recording masks, so the picture cannot show what the recording
 withholds; for a select the picture is stricter (the recording keeps the option list and masks
@@ -119,7 +135,8 @@ and query strings are never captured, and neither is a URL fragment that carries
 (`#access_token=…`, where supabase-js's implicit flow lands a session); a plain route fragment
 (`#batch-12`) is kept. The rule is the shape, not a list of names, so a hash router's route with
 parameters (`#/orders?page=2`) is dropped whole as well. The reporter sees what is attached
-before sending and can leave the recording out. The only network destination is `hubUrl`.
+before sending, can play the recording back, and can leave it out. The recording is the minute or
+two before the panel opened, not the time spent writing the report. The only network destination is `hubUrl`.
 
 Same-origin `<iframe>`s are part of the recording, and the same masking and the same `blank`
 selectors apply inside them. An `<iframe srcdoc>`'s attribute is withheld whole, because it can
@@ -134,13 +151,14 @@ replay's own first event, a masked snapshot taken by rrweb.
 ## Size
 
 The budget is what a dashboard downloads for this library on a page load: under **15 KB
-gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.1.1 is
-**11.6 KB** (`pnpm size`, which prints the number and fails if it grows past a ceiling just above
-it). The panel — its markup, its list and its stylesheet, another 9.5 KB — is a chunk of its own,
-fetched the first time `open()` is called, which is why `open()` returns a promise. The two
-dependencies are chunks of their own too: the recorder is fetched on the first idle moment after
-mount, the screenshot module when a screenshot is taken. `pnpm size` fails if any of the three
-becomes a static import.
+gzipped**, minified, built with code splitting the way an app's bundler builds it. v0.3.0 is
+**11.9 KB** (12177 bytes) (`pnpm size`, which prints the number and fails if it grows past a
+ceiling just above it). The panel — its markup, its list and its stylesheet, another 12.4 KB
+(12731 bytes) — is a chunk of its own, fetched the first time `open()` is called, which is why
+`open()` returns a promise. The three dependencies are chunks of their own too: the recorder is
+fetched on the first idle moment after mount, the screenshot module when a screenshot is taken,
+and with it the library's own viewport module (1.9 KB, `src/capture/viewport.js`), the player
+when a preview is asked for. `pnpm size` fails if any of the four becomes a static import.
 
 ## Develop
 
@@ -158,7 +176,7 @@ pnpm test:e2e      # Playwright, on a stub hub and a bundle of its own (stop `pn
 serves the repository so the demo page has an origin, and it is addressed as `127.0.0.1` while the
 page is on `localhost`, so every call in the demo and the browser test is a real cross-origin
 request with a preflight. The demo page's switches are documented at the top of `demo/demo.js`:
-`?real=1` runs the real recorder and the real screenshot from a bundled entry, `?hostile=1` adds
+`?real=1` runs the real recorder, the real screenshot and the real player from a bundled entry, `?hostile=1` adds
 the page-wide stylesheet, `?breakhooks=1` makes every hook the app supplies throw.
 
 `fixtures/status-cases.json` is shared with `feedback-hub`: it is the list of verdict and GitHub

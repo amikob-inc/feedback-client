@@ -1,6 +1,6 @@
 // What a dashboard actually pays for this library on a page load: `src/index.js` bundled and
 // minified the way an app's own build would do it, split into chunks the way an app's build does
-// it, then gzipped. The two lazy dependencies are left out because they are fetched at run time
+// it, then gzipped. The three lazy dependencies are left out because they are fetched at run time
 // on chunks of their own, and the panel is measured as a chunk of its own because that is what
 // `open()`'s `import()` makes it.
 //
@@ -24,9 +24,10 @@ export const CEILING = 12_288;
 
 const ENTRY = fileURLToPath(new URL("../src/index.js", import.meta.url));
 
-// Both of these are `import()`ed, never imported: the recorder on the first idle callback and the
-// screenshot module when a screenshot is actually taken.
-export const LAZY_DEPENDENCIES = ["@rrweb/record", "modern-screenshot"];
+// All three are `import()`ed, never imported: the recorder on the first idle callback, the
+// screenshot module when a screenshot is actually taken, and the player when a preview is asked
+// for (from the panel's chunk, not the entry).
+export const LAZY_DEPENDENCIES = ["@rrweb/record", "modern-screenshot", "rrweb-player"];
 
 // The panel is `import()`ed too, by open(). Anything under this directory belongs on the panel's
 // chunk and must not be reachable from the entry by a static import.
@@ -72,6 +73,16 @@ export async function measure() {
     }
   };
   walk(entryKey);
+  // The chunks reached only by `import()` make run-time imports of their own — the panel's chunk
+  // is the one that `import()`s the player — so their imports are collected too, keeping the first
+  // kind seen for a path. A static import of a chunk already on the page load is left out: it
+  // costs nothing more at run time.
+  for (const key of Object.keys(outputs)) {
+    if (pageLoad.has(key)) continue;
+    for (const one of outputs[key].imports || []) {
+      if (!pageLoad.has(one.path) && !dynamic.has(one.path)) dynamic.set(one.path, one.kind);
+    }
+  }
 
   const sum = (keys, field) => [...keys].reduce((total, key) => total + bytesOf[key][field], 0);
   const chunks = Object.keys(outputs).map((key) => ({
@@ -83,8 +94,8 @@ export async function measure() {
   return {
     raw: sum(pageLoad, "raw"),
     gzipped: sum(pageLoad, "gzipped"),
-    // Every import the page-load set still makes at run time, and how it makes it: the two
-    // dependencies and the panel's chunk, all as `dynamic-import`.
+    // Every import still made at run time, and how it is made: the three dependencies and the
+    // panel's chunk, all as `dynamic-import`.
     imports: [...dynamic].map(([path, kind]) => ({ path, kind })),
     // What the page load contains, by source file: the panel's files must not be in here.
     pageLoadInputs: [...pageLoad].flatMap((key) => Object.keys(outputs[key].inputs)),

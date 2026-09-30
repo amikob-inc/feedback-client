@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { byteLength } from "../src/bytes.js";
-import { CAPS, buildBundle, buildReport, describeAttachments, fitReport } from "../src/bundle.js";
+import { CAPS, buildBundle, buildReport, fitReport } from "../src/bundle.js";
 import { CLIENT_ID } from "../src/version.js";
 
 const png = (size) => new Blob([new Uint8Array(size)], { type: "image/png" });
@@ -200,40 +200,6 @@ describe("fitReport", () => {
     // otherwise fitReport removed at least one entry it did not need to.
     const putOneBack = { ...report, console: big.console.slice(removed - 1) };
     expect(byteLength(JSON.stringify(putOneBack))).toBeGreaterThan(3000);
-  });
-});
-
-describe("describeAttachments", () => {
-  it("names what is going", () => {
-    expect(
-      describeAttachments({
-        screenshot: png(1),
-        replay: gz(1),
-        images: [png(1), png(1)],
-      }),
-    ).toBe(
-      "What will be sent: a screenshot of this page, a recording of the last minute or two, 2 images you added, the console and network log.",
-    );
-  });
-
-  it("names one image in the singular and drops what is absent", () => {
-    expect(describeAttachments({ screenshot: null, replay: null, images: [png(1)] })).toBe(
-      "What will be sent: 1 image you added, the console and network log.",
-    );
-  });
-
-  it("never offers a copy of the page, whatever it is handed", () => {
-    // The bespoke page copy was removed on 2026-09-21 (three consecutive adversarial reviews got
-    // sensitive data through the snapshot). The reporter is told what is attached before they
-    // send, so this line must never grow the phrase back — not even if a caller left a `dom`
-    // argument behind after the removal.
-    expect(describeAttachments({ dom: gz(1), screenshot: png(1) })).toBe(
-      "What will be sent: a screenshot of this page, the console and network log.",
-    );
-  });
-
-  it("always names the console and network log, even with nothing else attached", () => {
-    expect(describeAttachments({})).toBe("What will be sent: the console and network log.");
   });
 });
 

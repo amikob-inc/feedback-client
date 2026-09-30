@@ -2,6 +2,7 @@
   "version": 1,
   "triageTimeoutMinutes": 20,
   "note": "Shared by amikob-inc/feedback-client (canonical) and amikob-inc/feedback-hub (copy). Changing this file means a pull request in both repositories.",
+  "deleteRule": "A reporter may delete a report while no issue exists for it or its issue is still open with no fix activity: every status but in_progress, fixed and closed.",
   "cases": [
     {
       "name": "no dispatch attempt yet",
@@ -15,7 +16,8 @@
         "original": null
       },
       "status": "triaging",
-      "label": "Received, being looked at"
+      "label": "Received, being looked at",
+      "canDelete": true
     },
     {
       "name": "dispatched five minutes ago, no verdict",
@@ -29,7 +31,8 @@
         "original": null
       },
       "status": "triaging",
-      "label": "Received, being looked at"
+      "label": "Received, being looked at",
+      "canDelete": true
     },
     {
       "name": "a pending marker and no verdict",
@@ -43,7 +46,8 @@
         "original": null
       },
       "status": "waiting",
-      "label": "Received, waiting"
+      "label": "Received, waiting",
+      "canDelete": true
     },
     {
       "name": "a pending marker beats a stale dispatch",
@@ -57,7 +61,8 @@
         "original": null
       },
       "status": "waiting",
-      "label": "Received, waiting"
+      "label": "Received, waiting",
+      "canDelete": true
     },
     {
       "name": "dispatched 25 minutes ago, no verdict, not pending",
@@ -71,112 +76,147 @@
         "original": null
       },
       "status": "error",
-      "label": "Could not triage"
+      "label": "Could not triage",
+      "canDelete": true
     },
     {
       "name": "an error verdict",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "error" },
+        "verdict": {
+          "verdict": "error"
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "error",
-      "label": "Could not triage"
+      "label": "Could not triage",
+      "canDelete": true
     },
     {
       "name": "an error verdict beats a pending marker",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": true,
-        "verdict": { "verdict": "error" },
+        "verdict": {
+          "verdict": "error"
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "error",
-      "label": "Could not triage"
+      "label": "Could not triage",
+      "canDelete": true
     },
     {
       "name": "needs_info with no reply yet",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "needs_info", "questions": ["Which SKU?"] },
+        "verdict": {
+          "verdict": "needs_info",
+          "questions": ["Which SKU?"]
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "needs_reply",
-      "label": "Needs your reply"
+      "label": "Needs your reply",
+      "canDelete": true
     },
     {
       "name": "needs_info with a reply after the verdict",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "needs_info", "questions": ["Which SKU?"] },
+        "verdict": {
+          "verdict": "needs_info",
+          "questions": ["Which SKU?"]
+        },
         "repliesAfterVerdict": true,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "triaging",
-      "label": "Received, being looked at"
+      "label": "Received, being looked at",
+      "canDelete": true
     },
     {
       "name": "answered",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "answered", "answer": "Click Export images." },
+        "verdict": {
+          "verdict": "answered",
+          "answer": "Click Export images."
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "answered",
-      "label": "Answered"
+      "label": "Answered",
+      "canDelete": true
     },
     {
       "name": "unusable",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "unusable", "reason": "The description is empty." },
+        "verdict": {
+          "verdict": "unusable",
+          "reason": "The description is empty."
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "not_filed",
-      "label": "Not filed"
+      "label": "Not filed",
+      "canDelete": true
     },
     {
       "name": "duplicate of an open issue",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "verdict": {
+          "verdict": "duplicate",
+          "duplicateOf": 3
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
-        "original": { "number": 3, "state": "open", "stateReason": null, "labels": ["from-panel"] }
+        "original": {
+          "number": 3,
+          "state": "open",
+          "stateReason": null,
+          "labels": ["from-panel"]
+        }
       },
       "status": "duplicate",
-      "label": "Already tracked as #3 (open)"
+      "label": "Already tracked as #3 (open)",
+      "canDelete": true
     },
     {
       "name": "duplicate of an issue closed as completed",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "verdict": {
+          "verdict": "duplicate",
+          "duplicateOf": 3
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
@@ -188,14 +228,18 @@
         }
       },
       "status": "duplicate",
-      "label": "Already tracked as #3 (fixed)"
+      "label": "Already tracked as #3 (fixed)",
+      "canDelete": true
     },
     {
       "name": "duplicate of an issue closed as not planned",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "verdict": {
+          "verdict": "duplicate",
+          "duplicateOf": 3
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
@@ -207,70 +251,94 @@
         }
       },
       "status": "duplicate",
-      "label": "Already tracked as #3 (closed)"
+      "label": "Already tracked as #3 (closed)",
+      "canDelete": true
     },
     {
       "name": "duplicate whose original could not be read",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "duplicate", "duplicateOf": 3 },
+        "verdict": {
+          "verdict": "duplicate",
+          "duplicateOf": 3
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "duplicate",
-      "label": "Already tracked as #3"
+      "label": "Already tracked as #3",
+      "canDelete": true
     },
     {
       "name": "filed, the issue could not be read",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "filed",
-      "label": "Filed as #7"
+      "label": "Filed as #7",
+      "canDelete": true
     },
     {
       "name": "filed with no issue number at all",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed" },
+        "verdict": {
+          "verdict": "filed"
+        },
         "repliesAfterVerdict": false,
         "issue": null,
         "prs": [],
         "original": null
       },
       "status": "filed",
-      "label": "Filed"
+      "label": "Filed",
+      "canDelete": true
     },
     {
       "name": "filed, open issue with no fix activity",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
-        "issue": { "number": 7, "state": "open", "stateReason": null, "labels": ["from-panel"] },
+        "issue": {
+          "number": 7,
+          "state": "open",
+          "stateReason": null,
+          "labels": ["from-panel"]
+        },
         "prs": [],
         "original": null
       },
       "status": "filed",
-      "label": "Filed as #7"
+      "label": "Filed as #7",
+      "canDelete": true
     },
     {
       "name": "filed, open issue labelled ai-candidate only",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
         "issue": {
           "number": 7,
@@ -282,14 +350,18 @@
         "original": null
       },
       "status": "filed",
-      "label": "Filed as #7"
+      "label": "Filed as #7",
+      "canDelete": true
     },
     {
       "name": "filed, open issue labelled ai-working",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
         "issue": {
           "number": 7,
@@ -301,28 +373,47 @@
         "original": null
       },
       "status": "in_progress",
-      "label": "Fix in progress"
+      "label": "Fix in progress",
+      "canDelete": false
     },
     {
       "name": "filed, open issue with an open pull request",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
-        "issue": { "number": 7, "state": "open", "stateReason": null, "labels": ["from-panel"] },
-        "prs": [{ "number": 9, "state": "open", "merged": false }],
+        "issue": {
+          "number": 7,
+          "state": "open",
+          "stateReason": null,
+          "labels": ["from-panel"]
+        },
+        "prs": [
+          {
+            "number": 9,
+            "state": "open",
+            "merged": false
+          }
+        ],
         "original": null
       },
       "status": "in_progress",
-      "label": "Fix in progress"
+      "label": "Fix in progress",
+      "canDelete": false
     },
     {
       "name": "filed, issue closed as completed",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
         "issue": {
           "number": 7,
@@ -330,18 +421,28 @@
           "stateReason": "completed",
           "labels": ["from-panel"]
         },
-        "prs": [{ "number": 9, "state": "closed", "merged": true }],
+        "prs": [
+          {
+            "number": 9,
+            "state": "closed",
+            "merged": true
+          }
+        ],
         "original": null
       },
       "status": "fixed",
-      "label": "Fixed"
+      "label": "Fixed",
+      "canDelete": false
     },
     {
       "name": "filed, issue closed as not planned",
       "input": {
         "dispatchedMinutesAgo": 5,
         "pending": false,
-        "verdict": { "verdict": "filed", "issueNumber": 7 },
+        "verdict": {
+          "verdict": "filed",
+          "issueNumber": 7
+        },
         "repliesAfterVerdict": false,
         "issue": {
           "number": 7,
@@ -353,7 +454,8 @@
         "original": null
       },
       "status": "closed",
-      "label": "Closed"
+      "label": "Closed",
+      "canDelete": false
     }
   ]
 }

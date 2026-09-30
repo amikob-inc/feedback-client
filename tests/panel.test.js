@@ -4,7 +4,7 @@ import { normalizeOptions } from "../src/options.js";
 import { FOCUSABLE, HOST_ID, createPanel } from "../src/panel/panel.js";
 import { THEME_PROPERTIES } from "../src/panel/styles.js";
 
-function setup({ theme = () => "light" } = {}) {
+function setup({ theme = () => "light", api: apiOverrides = {} } = {}) {
   const api = {
     submit: vi.fn(async () => ({ id: "r1", dropped: [] })),
     captureScreenshot: vi.fn(async () => null),
@@ -12,6 +12,7 @@ function setup({ theme = () => "light" } = {}) {
     reply: vi.fn(),
     retry: vi.fn(),
     markRead: vi.fn(),
+    ...apiOverrides,
   };
   const options = normalizeOptions({
     hubUrl: "https://hub.example",
@@ -113,6 +114,30 @@ describe("createPanel", () => {
     panel.destroy();
   });
 
+  // Owner's finding, 2026-09-30: drawing on the screenshot and clicking outside the drawing
+  // dialog closed the whole panel — and the next open retakes the screenshot, so the drawing was
+  // gone. While a nested dialog is open the backdrop belongs to it, like Escape does.
+  it("ignores a backdrop click while a drawing or preview dialog is open", () => {
+    const { panel } = setup();
+    panel.open();
+    const root = shadow();
+    for (const klass of ["fbh-annotator", "fbh-preview"]) {
+      const nested = document.createElement("div");
+      nested.className = klass;
+      root.querySelector(".fbh-body").appendChild(nested);
+      root
+        .querySelector(".fbh-overlay")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(panel.isOpen()).toBe(true);
+      nested.remove();
+    }
+    root
+      .querySelector(".fbh-overlay")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(panel.isOpen()).toBe(false);
+    panel.destroy();
+  });
+
   it("closes on Escape, on the close button and on the backdrop, and gives focus back", () => {
     document.body.innerHTML = `<button id="opener"></button>`;
     const opener = document.getElementById("opener");
@@ -162,6 +187,43 @@ describe("createPanel", () => {
       cancelable: true,
     });
     root.querySelector(".fbh-overlay").dispatchEvent(backward);
+    expect(root.activeElement).toBe(last);
+    panel.destroy();
+  });
+
+  // A control inside a hidden block — a row's Delete confirmation before it is asked for — is
+  // one the browser will not focus; a trap that still counted it as the last stop would never
+  // wrap, and Tab would walk out of the dialog on to the page (found by the browser test once
+  // the list grew such blocks).
+  it("wraps Tab past controls inside a hidden block", () => {
+    const { panel } = setup();
+    panel.open();
+    const root = shadow();
+    const ghost = document.createElement("div");
+    ghost.hidden = true;
+    ghost.innerHTML = `<button id="ghost">never</button>`;
+    root.querySelector(".fbh-body").appendChild(ghost);
+    const visible = [...root.querySelectorAll("button, select, textarea, input, a[href]")].filter(
+      (node) => !node.hidden && !node.closest("[hidden]"),
+    );
+    const first = visible[0];
+    const last = visible[visible.length - 1];
+    last.focus();
+    root
+      .querySelector(".fbh-overlay")
+      .dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+      );
+    expect(root.activeElement).toBe(first);
+    first.focus();
+    root.querySelector(".fbh-overlay").dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
     expect(root.activeElement).toBe(last);
     panel.destroy();
   });
@@ -233,7 +295,7 @@ describe("createPanel", () => {
   // — see annotate.js's and tests/form.test.js's own notes), so this reaches in and plants the
   // exact DOM shape annotate.js produces, to prove panel.js's own reaction to it — the boundary
   // this task owns — independent of whether this environment can drive the rest of that flow.
-  describe("a nested dialog (the annotator) on top of the panel", () => {
+  describe("a nested dialog (the annotator or the preview) on top of the panel", () => {
     function plantAnnotator() {
       const dialog = document.createElement("div");
       dialog.className = "fbh-annotator";
@@ -291,6 +353,95 @@ describe("createPanel", () => {
         );
       expect(panel.isOpen()).toBe(true); // the panel itself stayed open
       expect(seenAtDocument).toHaveBeenCalledTimes(1); // and the event reached the outer listener
+      panel.destroy();
+    });
+
+    // The recording's preview (preview.js) is the second nested dialog, scoped the same way.
+    function plantPreview() {
+      const dialog = document.createElement("div");
+      dialog.className = "fbh-preview";
+      const play = document.createElement("button");
+      play.type = "button";
+      play.textContent = "Pause";
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.textContent = "Close";
+      dialog.append(play, closeButton);
+      shadow().querySelector(".fbh-body").appendChild(dialog);
+      return { dialog, play, closeButton };
+    }
+
+    it("scopes Tab to the preview dialog instead of the rest of the panel", () => {
+      const { panel } = setup();
+      panel.open();
+      const { play, closeButton } = plantPreview();
+      const root = shadow();
+      closeButton.focus();
+      root
+        .querySelector(".fbh-overlay")
+        .dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+        );
+      expect(root.activeElement).toBe(play);
+      panel.destroy();
+    });
+
+    it("lets the preview dialog handle its own Escape instead of closing the whole panel", () => {
+      const { panel } = setup();
+      panel.open();
+      plantPreview();
+      shadow()
+        .querySelector(".fbh-overlay")
+        .dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+        );
+      expect(panel.isOpen()).toBe(true);
+      panel.destroy();
+    });
+
+    it("closing the panel closes an open preview, and gives Escape back to the page", async () => {
+      const calls = [];
+      class Player {
+        constructor({ target }) {
+          calls.push("construct");
+          target.appendChild(document.createElement("iframe"));
+        }
+        addEventListener() {}
+        getMetaData() {
+          return { totalTime: 0 };
+        }
+        toggle() {}
+        pause() {
+          calls.push("pause");
+        }
+        $destroy() {
+          calls.push("destroy");
+        }
+      }
+      const { panel } = setup({
+        api: {
+          replayEvents: () => [
+            { type: 4, timestamp: 1000, data: {} },
+            { type: 2, timestamp: 1000, data: {} },
+          ],
+          loadPlayer: async () => ({ Player }),
+        },
+      });
+      panel.open();
+      shadow().querySelector("[data-preview]").click();
+      expect(shadow().querySelector(".fbh-preview")).not.toBe(null);
+      await vi.waitFor(() => expect(calls).toEqual(["construct"]));
+      panel.close();
+      expect(shadow().querySelector(".fbh-preview")).toBe(null);
+      expect(calls).toEqual(["construct", "pause", "destroy"]);
+      // The preview's keydown listener on the document is gone: the page's own Escape travels on
+      // past the document (a listener still there would stop it at the document).
+      const seenAtWindow = vi.fn();
+      window.addEventListener("keydown", seenAtWindow, { once: true });
+      document.body.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+      expect(seenAtWindow).toHaveBeenCalledTimes(1);
       panel.destroy();
     });
 

@@ -1,9 +1,10 @@
 // The automatic screenshot (spec §5.3): modern-screenshot's domToBlob, imported only when a
-// screenshot is actually taken. Three things beyond the spec's literal call: the panel's own host
-// element is filtered out (it is on the page by the time the panel asks for a capture, and a
-// screenshot of the report form helps nobody), a capture over the hub's 5 MB cap is dropped here
-// rather than rejected there, and — the part that took an audit to notice — `capture.blank`
-// applies here too.
+// screenshot is actually taken. Four things beyond the spec's literal call: the capture is of the
+// viewport, not the page (src/capture/viewport.js, which says why: the whole-page walk froze the
+// host page for seconds and often produced no picture at all), the panel's own host element is
+// filtered out (it is on the page by the time the panel asks for a capture, and a screenshot of
+// the report form helps nobody), a capture over the hub's 5 MB cap is dropped here rather than
+// rejected there, and — the part that took an audit to notice — `capture.blank` applies here too.
 //
 // It did not until now. `capture.screenshot` defaults to **true**, and this is the
 // highest-fidelity copy of the page the library sends: a raster of every cost price, margin and
@@ -172,20 +173,27 @@ function maskTextNodes(root) {
 
 export async function captureScreenshot({
   load = () => import("modern-screenshot"),
+  loadViewport = () => import("./viewport.js"),
   target = document.body,
   hostId = HOST_ID,
   blank = [],
   maskAllInputs = false,
 } = {}) {
+  let unmark = () => {};
   try {
     const doc = (target && target.ownerDocument) || globalThis.document;
     const selector = blankSelector(blank, doc);
-    const { domToBlob } = await load();
+    const [{ domToBlob }, viewport] = await Promise.all([load(), loadViewport()]);
+    // The window's size, scroll and the on-screen filter (the host element is filtered there
+    // too), and the property list — see viewport.js.
+    const options = viewport.viewportOptions(target, { hostId });
+    unmark = viewport.markScrolled(target);
     const blob = await domToBlob(target, {
       scale: 1,
       timeout: 5000,
-      filter: (node) => !(node && node.nodeType === 1 && node.id === hostId),
+      ...options,
       onCloneEachNode: (cloned) => {
+        viewport.applyScrollOffset(cloned);
         if (hideBlanked(cloned, selector)) return;
         if (!maskClonedPassword(cloned)) maskClonedValue(cloned, maskAllInputs);
       },
@@ -199,5 +207,7 @@ export async function captureScreenshot({
   } catch (err) {
     warnOnce("screenshot", err);
     return null;
+  } finally {
+    unmark();
   }
 }

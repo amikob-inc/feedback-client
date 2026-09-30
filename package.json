@@ -1,6 +1,6 @@
 {
   "name": "@amikob/feedback-client",
-  "version": "0.1.1",
+  "version": "0.3.0",
   "description": "In-app feedback panel for the amikob dashboards: capture buffers, session replay, screenshot and the report panel, framework-free",
   "license": "MIT",
   "repository": {
@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@rrweb/record": "^2.1.4",
-    "modern-screenshot": "^4.7.0"
+    "modern-screenshot": "^4.7.0",
+    "rrweb-player": "^2.1.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

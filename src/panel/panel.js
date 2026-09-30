@@ -73,7 +73,10 @@ export function createPanel({ api, options, doc }) {
       hidden: true,
       onKeydown: onKeydown,
       onClick: (event) => {
-        if (event.target === overlay) close();
+        // A nested dialog owns the backdrop as it owns Escape: a click outside the drawing
+        // dialog used to close the whole panel and, with the screenshot retaken on the next
+        // open, lose the drawing (owner's finding, 2026-09-30).
+        if (event.target === overlay && !nestedDialog()) close();
       },
     },
     [panelBox],
@@ -90,33 +93,39 @@ export function createPanel({ api, options, doc }) {
   let previousOverflow = null;
 
   // Scopes the trap to whatever the *topmost* dialog is. Ordinarily that is the whole panel; but
-  // annotate.js opens its own dialog (class "fbh-annotator", spec §5.4) inside the form while the
-  // panel is open — a trap inside a trap — and that inner dialog has no Tab-cycling of its own
-  // (only its own Escape). Scoping to it here, whenever it is present, is what keeps Tab from
-  // wandering back out into the (visually dimmed, but otherwise ordinary) form and list behind it.
-  function annotatorDialog() {
-    return shadow.querySelector(".fbh-annotator");
+  // two nested dialogs open inside the form while the panel is open — annotate.js's drawing
+  // dialog (class "fbh-annotator", spec §5.4) and preview.js's recording preview (class
+  // "fbh-preview") — a trap inside a trap, and neither has Tab-cycling of its own (only its own
+  // Escape). Scoping to whichever is present is what keeps Tab from wandering back out into the
+  // (visually dimmed, but otherwise ordinary) form and list behind it.
+  function nestedDialog() {
+    return shadow.querySelector(".fbh-annotator, .fbh-preview");
   }
 
   function focusable(scope) {
     // No visibility test: jsdom has no layout, and everything inside the overlay is visible
-    // whenever the overlay itself is.
-    return [...scope.querySelectorAll(FOCUSABLE)].filter((node) => !node.hidden);
+    // whenever the overlay itself is — except what sits under a `hidden` attribute, its own or
+    // an ancestor's (a row's Delete confirmation waits inside a hidden block until asked for).
+    // A control the browser will not focus but the trap still counts as the last stop is a
+    // trap that never wraps: Tab walks out of the dialog on to the page behind it.
+    return [...scope.querySelectorAll(FOCUSABLE)].filter(
+      (node) => !node.hidden && !(typeof node.closest === "function" && node.closest("[hidden]")),
+    );
   }
 
   function onKeydown(event) {
     if (event.key === "Escape") {
       // The nested dialog owns Escape while it is open — closing itself, not the whole panel.
-      // Its own listener lives on `doc` (annotate.js's openAnnotator), reached only if this
-      // handler leaves the event alone: stopping it here, as the normal case below does, would
-      // mean Escape from inside the annotator always took out both at once.
-      if (annotatorDialog()) return;
+      // Its own listener lives on `doc` (annotate.js's openAnnotator, preview.js's openPreview),
+      // reached only if this handler leaves the event alone: stopping it here, as the normal case
+      // below does, would mean Escape from inside a nested dialog always took out both at once.
+      if (nestedDialog()) return;
       event.stopPropagation();
       close();
       return;
     }
     if (event.key !== "Tab") return;
-    const items = focusable(annotatorDialog() || shadow);
+    const items = focusable(nestedDialog() || shadow);
     if (!items.length) return;
     const index = items.indexOf(shadow.activeElement);
     if (event.shiftKey && index <= 0) {

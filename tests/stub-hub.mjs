@@ -1,4 +1,4 @@
-// A stand-in for feedback-hub, for the demo page and the browser test. It answers the four client
+// A stand-in for feedback-hub, for the demo page and the browser test. It answers the five client
 // routes with the shapes the hub's own routes answer, canned: every status in the shared fixture is
 // in the listing, so the panel's rendering of all of them is exercised in a real browser.
 //
@@ -45,6 +45,16 @@ const canned = fixture.cases.map((one, index) => ({
   reporter: { id: "demo", name: "Dana" },
   status: one.status,
   label: one.label,
+  canDelete: one.canDelete,
+  ...(one.input.issue
+    ? {
+        issue: {
+          number: one.input.issue.number,
+          url: one.input.issue.htmlUrl,
+          state: one.input.issue.state,
+        },
+      }
+    : {}),
   verdict: one.input.verdict
     ? { ...one.input.verdict, receivedAt: "2026-09-21T11:30:00.000Z" }
     : null,
@@ -52,12 +62,13 @@ const canned = fixture.cases.map((one, index) => ({
 }));
 
 let submitted = [];
+let deleted = new Set();
 let last = null;
 
 function cors(res, origin) {
   res.setHeader("Access-Control-Allow-Origin", origin || "*");
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
   res.setHeader("Access-Control-Max-Age", "60");
 }
@@ -170,6 +181,7 @@ async function handle(req, res) {
   }
   if (url.pathname === "/_stub/reset") {
     submitted = [];
+    deleted = new Set();
     last = null;
     json(res, 200, { ok: true });
     return;
@@ -183,8 +195,16 @@ async function handle(req, res) {
     // -1 for a recording that will not parse, which is a different thing from one with no events
     // in it and must not be reported as the same.
     let events;
+    let first = null;
+    let last_ = null;
     try {
-      events = JSON.parse(last.replayText || "[]").length;
+      const parsed = JSON.parse(last.replayText || "[]");
+      events = parsed.length;
+      for (const one of parsed) {
+        if (typeof one.timestamp !== "number") continue;
+        if (first === null || one.timestamp < first) first = one.timestamp;
+        if (last_ === null || one.timestamp > last_) last_ = one.timestamp;
+      }
     } catch {
       events = -1;
     }
@@ -193,7 +213,7 @@ async function handle(req, res) {
       report: last.report,
       parts: last.parts,
       sizes: last.sizes,
-      replay: { bytes: last.replayText.length, events },
+      replay: { bytes: last.replayText.length, events, first, last: last_ },
       found: findIn({ report: JSON.stringify(last.report), replay: last.replayText }, needles),
       context: around ? contextAround(last.replayText, around) : undefined,
     });
@@ -221,6 +241,7 @@ async function handle(req, res) {
       reporter: { id: "demo", name: "Dana" },
       status: "triaging",
       label: "Received, being looked at",
+      canDelete: true,
       verdict: null,
       replies: [],
     });
@@ -229,7 +250,33 @@ async function handle(req, res) {
   }
 
   if (url.pathname === "/v1/reports" && req.method === "GET") {
-    json(res, 200, { items: [...submitted, ...canned], nextCursor: null });
+    json(res, 200, {
+      items: [...submitted, ...canned].filter((one) => !deleted.has(one.id)),
+      nextCursor: null,
+    });
+    return;
+  }
+
+  // The hub's rule, as the fixture states it per case: a report whose `canDelete` is false
+  // answers 409, one that is gone answers 404, and a filed one reports the issue it closed.
+  const remove = /^\/v1\/reports\/([^/]+)$/.exec(url.pathname);
+  if (remove && req.method === "DELETE") {
+    const id = remove[1];
+    const one = [...submitted, ...canned].find((item) => item.id === id);
+    if (!one || deleted.has(id)) {
+      json(res, 404, { error: "unknown_report", message: `unknown report ${id}` });
+      return;
+    }
+    if (one.canDelete !== true) {
+      json(res, 409, { error: "not_deletable", message: `report ${id} is ${one.status}` });
+      return;
+    }
+    deleted.add(id);
+    const issue =
+      one.verdict && one.verdict.verdict === "filed" && typeof one.verdict.issueNumber === "number"
+        ? { number: one.verdict.issueNumber, closed: true }
+        : null;
+    json(res, 200, { id, deleted: true, issue });
     return;
   }
 

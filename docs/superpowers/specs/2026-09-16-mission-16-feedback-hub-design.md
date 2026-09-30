@@ -60,6 +60,7 @@
 | D14 | **`ci.yml` never deploys a push to `main` made by the Claude bot.** The `meta` job fails when `github.event_name == 'push'` and `github.actor == 'claude[bot]'`, with an error asking the owner to review and revert | rely on the prompt and the tool allow-list alone | GitHub Free has no branch protection or rulesets on a private repository (Mission 15 D7); this is the backstop |
 | D15 | **The panel changes behaviour**: Edit, Delete and Mark resolved disappear; status comes from GitHub; a reporter can add a reply. Colleagues see their own reports, admins see everyone's | keep the old controls beside the new status (two sources of truth) | GitHub is the tracker; the old controls were the tracker |
 | D16 | **Admins are an allow-list of e-mails in `apps.yaml`**, matched against the verified `email` claim of the Supabase token | the app's `profiles.role` (the hub would need database access or custom JWT claims via an auth hook) | explicit, reviewable, and the admin is one person today; custom claims are future work |
+| D17 | **A reporter can delete their own report while nothing on GitHub depends on it** (`DELETE /v1/reports/:id`, 2026-09-29): no issue yet, or an open issue with no fix activity, which the delete closes as not planned with a comment. Refused (`409 not_deletable`) while a fix is in progress, and for a fixed or closed issue. The report's folder, marker and index entries go; a tombstone `deleted/<id>` stays so a triage run still in flight has the issue it files closed instead of orphaned. The listing says `canDelete` per item, and the panel shows Delete from that alone | soft delete (a hidden flag; the data stays, the retention clock is the only eraser); allow deletion under a fix (strands the pull request behind a closed issue); no delete at all (the old tracker had one, and a mistaken or test report has no other way out) | the owner's request while testing the panel; the rule and its two exceptions are the owner's decision of 2026-09-29 |
 
 ---
 
@@ -329,6 +330,7 @@ Rules: origins are anchored regular expressions matched whole (Mission 15 §5.6'
 | `GET /v1/reports?app=cad` | client | Supabase bearer token | the caller's reports (all reports for an admin), newest first, at most 50, each with status, verdict fields and issue and PR links |
 | `POST /v1/reports/:id/replies` | client | Supabase bearer token; must be the reporter or an admin | append `{ at, by, text }` to `replies.json`; dispatch again |
 | `POST /v1/reports/:id/retry` | client | as above | dispatch again when the state is `waiting` or `error` |
+| `DELETE /v1/reports/:id?app=cad` | client | as above | D17: when the item's `canDelete` holds, close a filed issue as not planned (a GitHub failure answers `502 github_error` and changes nothing), delete the report's folder, marker and index entries, write the tombstone; `200 { id, deleted: true, issue }`; `409 not_deletable` otherwise, also when the issue's state could not be read |
 | `GET /v1/reports/:id/bundle` | triage run | GitHub OIDC; `repository` = the report's target repository | `report.json`, `replies.json`, attachment URLs, and a one-hour App installation token scoped to that repository with `issues: write` (`githubToken`) |
 | `POST /v1/reports/:id/verdict` | triage run | GitHub OIDC as above | store `verdict.json` (validated by schema §7.4) |
 | `POST /v1/jobs/redispatch` | Cloud Scheduler | Google OIDC, `email` = `feedback-scheduler@amikob.iam.gserviceaccount.com`, `aud` = hub URL | start the workflow for every pending marker older than two minutes |
@@ -360,6 +362,7 @@ apps/<app>/reports/<id>/replies.json       [{ at, by, text }]
 apps/<app>/reports/<id>/dispatch.json      { attempts, lastAt, lastError, runsStarted }
 apps/<app>/reports/<id>/verdict.json       §7.4, plus receivedAt and runId
 apps/<app>/pending/<id>                    marker while a dispatch is owed
+apps/<app>/deleted/<id>                    { repo, deletedAt, by } after a delete (D17); never listed
 apps/<app>/reporters/<sub>/index.json      { reports: [{ id, at }] }, newest first, capped at 200
 apps/<app>/index.json                      { reports: [{ id, at, reporter }] } for admins, capped at 2000
 ```

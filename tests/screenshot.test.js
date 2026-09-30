@@ -28,6 +28,40 @@ describe("captureScreenshot", () => {
     expect(options.timeout).toBe(5000);
   });
 
+  it("captures the viewport: the window's size, the scroll shift, the on-screen filter and the property list", async () => {
+    const domToBlob = vi.fn(async () => blobOf(10));
+    Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 720, configurable: true });
+    await captureScreenshot({ load: async () => ({ domToBlob }), target: document.body });
+    const options = domToBlob.mock.calls[0][1];
+    expect(options.width).toBe(1280);
+    expect(options.height).toBe(720);
+    // jsdom has no layout, so this is the whole-page fallback: no shift.
+    expect(options.style).toBe(undefined);
+    expect(Array.isArray(options.includeStyleProperties)).toBe(true);
+    expect(options.includeStyleProperties).toContain("background-color");
+    expect(typeof options.filter).toBe("function");
+  });
+
+  it("marks scrolled elements for the capture and unmarks them afterwards, even when the capture fails", async () => {
+    document.body.innerHTML = `<div id="scroller"><p>1</p></div>`;
+    const scroller = document.getElementById("scroller");
+    Object.defineProperty(scroller, "scrollTop", { value: 25, configurable: true });
+    let markedDuring = null;
+    const domToBlob = vi.fn(async () => {
+      markedDuring = scroller.getAttribute("data-fbh-scroll");
+      throw new Error("raster failed");
+    });
+    resetWarnings();
+    const blob = await captureScreenshot({
+      load: async () => ({ domToBlob }),
+      target: document.body,
+    });
+    expect(blob).toBe(null);
+    expect(markedDuring).toBe("0,25");
+    expect(scroller.hasAttribute("data-fbh-scroll")).toBe(false);
+  });
+
   it("filters out the panel's own host element", async () => {
     const domToBlob = vi.fn(async () => blobOf(10));
     await captureScreenshot({ load: async () => ({ domToBlob }), target: {} });

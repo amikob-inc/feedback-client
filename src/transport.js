@@ -1,4 +1,4 @@
-// The four client routes of the hub (spec §6.3, service/src/routes.ts). Three of them need
+// The five client routes of the hub (spec §6.3, service/src/routes.ts). Four of them need
 // `?app=` — the spec's table only shows it on the listing, but the hub reads the query on the
 // reply and retry routes too and answers 404 unknown_app without it. Submit is the exception:
 // there the app travels inside the report JSON.
@@ -50,7 +50,11 @@ export function messageFor(status, code, message) {
       ? "This report has all the replies it can take."
       : "You have sent a lot of reports this hour. Try again later.";
   }
-  if (status === 409) return "This report has already moved on.";
+  if (status === 409) {
+    return code === "not_deletable"
+      ? "This report can no longer be deleted."
+      : "This report has already moved on.";
+  }
   if (status === 403) {
     return code === "origin"
       ? "This site is not allowed to send reports."
@@ -148,6 +152,9 @@ export function createTransport({ hubUrl, app, getToken, fetch: fetchImpl } = {}
     },
     retry(id) {
       return call(`/v1/reports/${encodeURIComponent(id)}/retry?${appQuery}`, { method: "POST" });
+    },
+    remove(id) {
+      return call(`/v1/reports/${encodeURIComponent(id)}?${appQuery}`, { method: "DELETE" });
     },
   };
 }
