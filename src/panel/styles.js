@@ -163,11 +163,21 @@ padding: 10px; border: 1px solid var(--fbh-border); border-radius: 10px; backgro
 .fbh-form-annotating .fbh-strip, .fbh-form-annotating .fbh-submit-row { opacity: 0.4; pointer-events: none; }
 .fbh-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .fbh-hidden-file { display: none; }
-.fbh-note, .fbh-message, .fbh-row-message { margin: 0; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-message, .fbh-row-message { margin: 0; font-size: 11.5px; color: var(--fbh-muted); }
 .fbh-message:empty, .fbh-row-message:empty { display: none; }
 .fbh-status-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .fbh-retry-slot:empty { display: none; }
 .fbh-check { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-sending { margin: 0; padding: 0 0 0 16px; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-sending-item { margin: 2px 0; }
+.fbh-sending-item[hidden] { display: none; }
+.fbh-sending-replay .fbh-check { display: inline-flex; vertical-align: baseline; }
+.fbh-sending-replay.is-off .fbh-sending-text { text-decoration: line-through; opacity: 0.7; }
+.fbh-link {
+padding: 0 4px; border: 0; background: none; cursor: pointer; font: inherit; font-size: 11.5px;
+color: var(--fbh-accent); text-decoration: underline;
+}
+.fbh-link[hidden] { display: none; }
 .fbh-submit-row { display: flex; justify-content: flex-end; }
 .fbh-primary {
 padding: 8px 16px; border: 0; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 600;

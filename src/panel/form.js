@@ -5,7 +5,7 @@
 // what is going before it goes (spec §5.7). There is no page-copy attachment any more (removed
 // 2026-09-21, see src/bundle.js's own note): the strip only ever holds the screenshot and images,
 // and "What will be sent" never claims a page copy.
-import { CAPS, describeAttachments } from "../bundle.js";
+import { CAPS, attachmentLines } from "../bundle.js";
 import {
   captureScreen as defaultCaptureScreen,
   screenCaptureSupported,
@@ -100,7 +100,43 @@ export function createForm({
   // Hidden until a Draw button opens it; the panel's own DOM, not the annotator's, controls
   // visibility (annotate.js knows nothing about the form around it). See annotate() below.
   const annotatorMount = el(doc, "div", { class: "fbh-annotator-mount", hidden: true });
-  const note = el(doc, "p", { class: "fbh-note" });
+  // "What will be sent" (spec §5.4), as a list with counts (owner's request, 2026-09-30). The
+  // recording's line is one node that lives for the life of the form — its text, its Preview
+  // button and its "Leave it out" switch — and is never rebuilt: leaving the recording out only
+  // adds a class that strikes the text through, so the words, the wrapping and the position of
+  // everything below stay exactly as they were. Rebuilding the line, or changing its words, made
+  // the switch itself jump under the pointer (owner's finding, 2026-09-30).
+  const sending = el(doc, "ul", { class: "fbh-sending", "aria-label": "What will be sent" });
+  const replayText = el(doc, "span", { class: "fbh-sending-text" });
+  const previewButton = el(doc, "button", {
+    type: "button",
+    class: "fbh-link",
+    "data-preview": true,
+    hidden: true,
+    text: "Preview",
+    onClick: () => preview(),
+  });
+  const replayToggle = el(doc, "input", {
+    id: "fbh-no-replay",
+    type: "checkbox",
+    onChange: () => {
+      includeReplay = !replayToggle.checked;
+      replayLine.classList.toggle("is-off", !includeReplay);
+    },
+  });
+  const replayLine = el(
+    doc,
+    "li",
+    { class: "fbh-sending-item fbh-sending-replay", "data-key": "replay", hidden: true },
+    [
+      replayText,
+      previewButton,
+      el(doc, "label", { class: "fbh-check fbh-inline" }, [
+        replayToggle,
+        el(doc, "span", { text: "Leave it out" }),
+      ]),
+    ],
+  );
   // aria-atomic: the whole line is replaced on every update (never a partial diff a reporter
   // could misread as the complete list of attachments), so a screen reader must announce it whole
   // too. role="status" + aria-live="polite" covers both the informational states (sending, sent,
@@ -137,14 +173,6 @@ export function createForm({
     onClick: () => fileInput.click(),
   });
   const actions = el(doc, "div", { class: "fbh-actions" }, [attachButton, fileInput]);
-  const replayToggle = el(doc, "input", {
-    id: "fbh-no-replay",
-    type: "checkbox",
-    onChange: () => {
-      includeReplay = !replayToggle.checked;
-      renderNote();
-    },
-  });
   const submitButton = el(doc, "button", {
     id: "fbh-submit",
     type: "button",
@@ -173,11 +201,7 @@ export function createForm({
     strip,
     annotatorMount,
     actions,
-    note,
-    el(doc, "label", { class: "fbh-check" }, [
-      replayToggle,
-      el(doc, "span", { text: "Leave the recording out" }),
-    ]),
+    sending,
     el(doc, "div", { class: "fbh-status-row" }, [message, retrySlot]),
     el(doc, "div", { class: "fbh-submit-row" }, [submitButton]),
   ]);
@@ -218,22 +242,44 @@ export function createForm({
     urls.length = 0;
   }
 
-  function renderNote() {
-    // No `dom`: the page copy was removed on 2026-09-21 (note at the top), and this line is what
-    // the reporter reads before they send — it must name only what is really attached, never
-    // something that is not. `describeAttachments` never took a `dom` argument to begin with any
-    // more, so there is nothing here to withhold.
-    //
-    // The recording clause is driven by `replayAttached`, not the static `options.capture.replay`
-    // flag: the flag only says the app asked for a recording, and stays true even where rrweb
-    // never actually starts. `replayAttached` is the answer `api.replayReady` gave once it
-    // settled, so the note can never promise a recording the bundle will not actually carry.
-    note.textContent = describeAttachments({
-      screenshot,
-      replay: includeReplay && replayAttached ? true : null,
-      images,
+  // Reads what the next report will carry (api.pending(): a host-side answer, so guarded like
+  // every other hook) and rebuilds the list — every line but the recording's, which is the same
+  // node every time and only has its words and its Preview button updated in place.
+  function renderSending() {
+    const empty = {
+      screenshot: false,
+      replay: null,
+      console: 0,
+      errors: 0,
+      network: 0,
+      breadcrumbs: 0,
+    };
+    const pending = (api.pending && safeCall(() => api.pending(), empty, "pending()")) || empty;
+    const lines = attachmentLines({
+      screenshot: !!screenshot,
+      replay: { ready: replayAttached, seconds: pending.replay ? pending.replay.seconds : null },
+      images: images.length,
+      counts: pending,
     });
+    const replay = lines.find((line) => line.key === "replay");
+    replayLine.hidden = !replay;
+    if (replay) replayText.textContent = replay.text;
+    previewButton.hidden = !(replay && pending.replay);
+    clear(sending);
+    for (const line of lines) {
+      sending.appendChild(
+        line.key === "replay"
+          ? replayLine
+          : el(doc, "li", { class: "fbh-sending-item", "data-key": line.key, text: line.text }),
+      );
+    }
+    // The recording's node is always in the list, never re-created; `hidden` says there is
+    // nothing to show yet. Without a line of its own it waits in the place it will take.
+    if (!replay) sending.insertBefore(replayLine, sending.children[screenshot ? 1 : 0] || null);
   }
+
+  // Task 6 replaces this with the real preview dialog.
+  function preview() {}
 
   // `api.replayReady` (see mount.js) settles once, to whatever the recorder's real outcome was.
   // Subscribing here, once, for the life of the form covers every prepare()/open() to come:
@@ -243,7 +289,7 @@ export function createForm({
   if (api.replayReady && typeof api.replayReady.then === "function") {
     api.replayReady.then((ready) => {
       replayAttached = !!ready;
-      renderNote();
+      renderSending();
     });
   }
 
@@ -329,7 +375,7 @@ export function createForm({
         ),
       );
     });
-    renderNote();
+    renderSending();
     if (focus !== undefined) {
       const { index, selector = "[data-remove]" } =
         typeof focus === "number" ? { index: focus } : focus;
@@ -546,6 +592,7 @@ export function createForm({
     fill(typeSelect, options.types, options.types[0]);
     includeReplay = true;
     replayToggle.checked = false;
+    replayLine.classList.remove("is-off");
     if (screenCaptureSupported(win) && !element.querySelector("#fbh-capture")) {
       actions.insertBefore(
         el(doc, "button", {

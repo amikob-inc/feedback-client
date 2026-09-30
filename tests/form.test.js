@@ -45,6 +45,15 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, ope
     // matching the pre-F4 behaviour. The dedicated "What will be sent" tests below override this
     // to exercise the pending/failed recorder cases.
     replayReady: Promise.resolve(true),
+    pending: vi.fn(() => ({
+      screenshot: true,
+      replay: { from: 1000, to: 104_000, seconds: 103 },
+      console: 12,
+      errors: 1,
+      network: 3,
+      breadcrumbs: 40,
+    })),
+    replayEvents: vi.fn(() => [{ type: 2, timestamp: 1000, data: {} }]),
     options,
     ...apiOverrides,
   };
@@ -63,6 +72,7 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, ope
 }
 
 const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => document.querySelectorAll(selector);
 
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -90,9 +100,7 @@ describe("createForm", () => {
     expect($(".fbh-strip").textContent).toContain("Screenshot");
     $(".fbh-strip button[data-remove]").click();
     expect($(".fbh-strip").textContent).not.toContain("Screenshot");
-    expect($(".fbh-note").textContent).toBe(
-      "What will be sent: a recording of the last minute or two, the console and network log.",
-    );
+    expect([...$$(".fbh-sending li")].map((li) => li.dataset.key)).toEqual(["replay", "logs"]);
     form.destroy();
   });
 
@@ -562,57 +570,116 @@ describe("createForm", () => {
   });
 });
 
-describe("the recording clause in 'What will be sent'", () => {
-  it("leaves the recording out while the recorder's real status is still unknown", async () => {
-    let resolveReady;
-    const replayReady = new Promise((resolve) => {
-      resolveReady = resolve;
-    });
-    const { form } = setup({ api: { replayReady } });
+describe("What will be sent", () => {
+  const lines = () =>
+    [...document.querySelectorAll(".fbh-sending li")].map((li) => li.textContent.trim());
+
+  it("is a list: the screenshot, the recording's window, the images, the log with counts", async () => {
+    const { form } = setup();
     await form.prepare();
-    expect($(".fbh-note").textContent).not.toContain("a recording");
-    resolveReady(true);
-    await vi.waitFor(() =>
-      expect($(".fbh-note").textContent).toContain("a recording of the last minute or two"),
+    expect(document.querySelector(".fbh-sending").getAttribute("aria-label")).toBe(
+      "What will be sent",
+    );
+    expect(lines()[0]).toBe("1 screenshot of this page, taken when you opened the panel");
+    expect(lines()[1]).toContain("The recording of the 1 min 43 s before you opened the panel");
+    expect(lines()[lines().length - 1]).toBe(
+      "The console and network log: 12 console lines, 1 error, 3 failed or slow requests, 40 clicks",
     );
     form.destroy();
   });
 
-  it("never claims a recording once the recorder is confirmed to have failed to start", async () => {
+  it("adds the images line as images are added, and drops it when they go", async () => {
+    const { form } = setup();
+    await form.prepare();
+    form.addImage(png(), "a.png");
+    form.addImage(png(), "b.png");
+    expect(lines()).toContain("2 images you added");
+    document.querySelector("[data-image] [data-remove]").click();
+    expect(lines()).toContain("1 image you added");
+    form.destroy();
+  });
+
+  it("says nothing about a recording until the recorder has really started", async () => {
+    let settle;
+    const replayReady = new Promise((resolve) => {
+      settle = resolve;
+    });
+    const { form } = setup({ api: { replayReady } });
+    await form.prepare();
+    expect(document.querySelector(".fbh-sending-replay").hidden).toBe(true);
+    settle(true);
+    await vi.waitFor(() =>
+      expect(document.querySelector(".fbh-sending-replay").hidden).toBe(false),
+    );
+    form.destroy();
+  });
+
+  it("keeps the recording line hidden when the recorder failed to start", async () => {
     const { form } = setup({ api: { replayReady: Promise.resolve(false) } });
     await form.prepare();
-    // Give the already-settled promise's .then() a turn to run and re-render the note.
     await Promise.resolve();
     await Promise.resolve();
-    expect($(".fbh-note").textContent).not.toContain("a recording");
+    expect(document.querySelector(".fbh-sending-replay").hidden).toBe(true);
+    expect(lines().some((line) => line.includes("recording"))).toBe(false);
     form.destroy();
   });
 
-  it("mentions the recording once it is confirmed, even if that happens after the strip last rendered", async () => {
-    let resolveReady;
-    const replayReady = new Promise((resolve) => {
-      resolveReady = resolve;
-    });
-    const { form } = setup({ api: { replayReady } });
+  it("leaving the recording out strikes the line through and changes nothing else in the list", async () => {
+    const { form } = setup();
     await form.prepare();
-    // Nothing else touches the strip or the checkbox between prepare() and the recorder settling
-    // — the note still has to catch up on its own.
-    resolveReady(true);
-    await vi.waitFor(() =>
-      expect($(".fbh-note").textContent).toBe(
-        "What will be sent: a screenshot of this page, a recording of the last minute or two, the console and network log.",
-      ),
+    const before = lines();
+    const row = document.querySelector(".fbh-sending-replay");
+    const text = row.querySelector(".fbh-sending-text");
+    document.getElementById("fbh-no-replay").click();
+    expect(row.classList.contains("is-off")).toBe(true);
+    expect(document.querySelector(".fbh-sending-replay .fbh-sending-text")).toBe(text); // same node
+    expect(lines()).toEqual(before); // same words, same lines: nothing to re-wrap, nothing moves
+    document.getElementById("fbh-no-replay").click();
+    expect(row.classList.contains("is-off")).toBe(false);
+    form.destroy();
+  });
+
+  it("offers Preview only when something has been recorded", async () => {
+    const { form } = setup({
+      api: {
+        pending: () => ({
+          screenshot: true,
+          replay: null,
+          console: 0,
+          errors: 0,
+          network: 0,
+          breadcrumbs: 0,
+        }),
+      },
+    });
+    await form.prepare();
+    expect(document.querySelector(".fbh-sending-replay").hidden).toBe(false);
+    expect(document.querySelector("[data-preview]").hidden).toBe(true);
+    expect(document.querySelector(".fbh-sending-text").textContent).toBe(
+      "The recording (nothing recorded yet)",
     );
     form.destroy();
   });
 
-  it("still says nothing about a recording the reporter opted out of, even once the recorder is confirmed", async () => {
-    const { form } = setup({ api: { replayReady: Promise.resolve(true) } });
+  it("survives a pending() that throws: the list still says what it can", async () => {
+    const { form } = setup({
+      api: {
+        pending: () => {
+          throw new Error("host broke");
+        },
+      },
+    });
     await form.prepare();
-    $("#fbh-no-replay").checked = true;
-    $("#fbh-no-replay").dispatchEvent(new window.Event("change"));
-    await Promise.resolve();
-    expect($(".fbh-note").textContent).not.toContain("a recording");
+    expect(lines().length).toBeGreaterThan(0);
+    form.destroy();
+  });
+
+  it("re-reads the counts on every prepare(), so a reopened panel is current", async () => {
+    const { form, api } = setup();
+    await form.prepare();
+    api.pending.mockClear();
+    await form.prepare();
+    expect(api.pending).toHaveBeenCalled();
     form.destroy();
   });
 });
