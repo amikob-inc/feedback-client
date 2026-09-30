@@ -228,7 +228,7 @@ padding: 8px 12px; border: 1px solid var(--fbh-hairline); border-radius: 10px; b
 .fbh-sending-replay.is-off .fbh-sending-text { text-decoration: line-through; opacity: 0.6; }
 .fbh-sending-replay.is-off::before { background: var(--fbh-muted); }
 .fbh-switch { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; cursor: pointer; font-size: 11.5px; color: var(--fbh-muted); }
-.fbh-switch input { position: absolute; left: 0; top: 0; width: 32px; height: 18px; margin: 0; opacity: 0; cursor: pointer; }
+.fbh-switch input { position: absolute; left: 0; top: 0; z-index: 1; width: 32px; height: 18px; margin: 0; opacity: 0; cursor: pointer; }
 .fbh-switch-track { position: relative; flex: none; width: 32px; height: 18px; border-radius: 999px; background: var(--fbh-border); transition: background 0.15s; }
 .fbh-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: left 0.15s; }
 .fbh-switch input:checked + .fbh-switch-track { background: var(--fbh-danger); }
