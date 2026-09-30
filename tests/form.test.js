@@ -730,6 +730,43 @@ describe("What will be sent", () => {
     form.destroy();
   });
 
+  it("does not open the drawing dialog while the preview is open", async () => {
+    const openPreview = vi.fn(({ mount }) => {
+      const element = document.createElement("div");
+      element.className = "fbh-preview";
+      mount.appendChild(element);
+      return { element, close() {} };
+    });
+    const openAnnotator = vi.fn(({ mount }) =>
+      Promise.resolve(fakeAnnotatorDialog(document, mount)),
+    );
+    const { form } = setup({ openPreview, openAnnotator });
+    await form.prepare();
+    $("[data-preview]").click();
+    expect(openPreview).toHaveBeenCalledTimes(1);
+    $(".fbh-thumb-draw").click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(openAnnotator).not.toHaveBeenCalled();
+    expect(form.element.classList.contains("fbh-form-annotating")).toBe(false);
+    form.destroy();
+  });
+
+  it("does not open the preview while the drawing dialog is open", async () => {
+    const openPreview = vi.fn();
+    const openAnnotator = vi.fn(({ mount }) =>
+      Promise.resolve(fakeAnnotatorDialog(document, mount)),
+    );
+    const { form } = setup({ openPreview, openAnnotator });
+    await form.prepare();
+    $(".fbh-thumb-draw").click();
+    await vi.waitFor(() => expect(openAnnotator).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    $("[data-preview]").click();
+    expect(openPreview).not.toHaveBeenCalled();
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(false);
+    form.destroy();
+  });
+
   it("says so instead of opening a preview when nothing was recorded", async () => {
     const openPreview = vi.fn();
     const { form } = setup({ openPreview, api: { replayEvents: () => [] } });

@@ -290,7 +290,10 @@ export function createForm({
   // open the strip and Send are dimmed and inert like the annotator does it. The player gets the
   // frozen events the report would carry (api.replayEvents()), never the live recording.
   function preview() {
-    if (activePreview || busy) return;
+    // Never beside the drawing dialog: the panel's trap scopes Tab to whichever nested dialog it
+    // finds first, so two open at once would leave one of them unreachable. The mount's
+    // visibility covers the moment before openAnnotator() has resolved and activeAnnotator is set.
+    if (activePreview || activeAnnotator || !annotatorMount.hidden || busy) return;
     const events = api.replayEvents ? safeCall(api.replayEvents, [], "replayEvents()") : [];
     if (!Array.isArray(events) || !events.length) {
       say("Nothing has been recorded yet.");
@@ -424,6 +427,8 @@ export function createForm({
   // old Draw button is already disconnected and `stop` correctly leaves it alone); Cancel, Escape
   // and a load failure never touch the strip, so they need this to get back to where they started.
   async function annotate(blob, onDone) {
+    // Never beside the preview, and never twice (see preview() above).
+    if (activePreview || activeAnnotator || !annotatorMount.hidden) return;
     // The control that opened the editor, looked up through the form's own root rather than the
     // document's: inside the shadow root `doc.activeElement` is the host element, so asking the
     // document would hand back the panel's wrapper and "focus goes back where it came from"
