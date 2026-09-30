@@ -14,6 +14,7 @@ import { defaultSection } from "../options.js";
 import { warnOnce } from "../warn.js";
 import { openAnnotator as defaultOpenAnnotator } from "./annotate.js";
 import { activeWithin, clear, el } from "./dom.js";
+import { openPreview as defaultOpenPreview } from "./preview.js";
 import { attachmentLines } from "./sending.js";
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg"];
@@ -69,6 +70,7 @@ export function createForm({
   onSubmitted = () => {},
   captureScreen = defaultCaptureScreen,
   openAnnotator = defaultOpenAnnotator,
+  openPreview = defaultOpenPreview,
 }) {
   let screenshot = null;
   let includeReplay = true;
@@ -85,6 +87,7 @@ export function createForm({
   // pointermove/pointerup/keydown listeners live on `doc`, independent of this form's own DOM, so
   // an open dialog would otherwise keep running after the form itself is gone.
   let activeAnnotator = null;
+  let activePreview = null;
   let destroyed = false;
 
   const sectionSelect = el(doc, "select", { id: "fbh-section", class: "fbh-input" });
@@ -101,6 +104,7 @@ export function createForm({
   // Hidden until a Draw button opens it; the panel's own DOM, not the annotator's, controls
   // visibility (annotate.js knows nothing about the form around it). See annotate() below.
   const annotatorMount = el(doc, "div", { class: "fbh-annotator-mount", hidden: true });
+  const previewMount = el(doc, "div", { class: "fbh-preview-mount", hidden: true });
   // "What will be sent" (spec §5.4), as a list with counts (owner's request, 2026-09-30). The
   // recording's line is one node that lives for the life of the form — its text, its Preview
   // button and its "Leave it out" switch — and is never rebuilt: leaving the recording out only
@@ -201,6 +205,7 @@ export function createForm({
     ]),
     strip,
     annotatorMount,
+    previewMount,
     actions,
     sending,
     el(doc, "div", { class: "fbh-status-row" }, [message, retrySlot]),
@@ -281,8 +286,31 @@ export function createForm({
     }
   }
 
-  // Task 6 replaces this with the real preview dialog.
-  function preview() {}
+  // Opens the recording's preview in the form, the panel widened as for drawing; while it is
+  // open the strip and Send are dimmed and inert like the annotator does it. The player gets the
+  // frozen events the report would carry (api.replayEvents()), never the live recording.
+  function preview() {
+    if (activePreview || busy) return;
+    const events = api.replayEvents ? safeCall(api.replayEvents, [], "replayEvents()") : [];
+    if (!Array.isArray(events) || !events.length) {
+      say("Nothing has been recorded yet.");
+      return;
+    }
+    element.classList.add("fbh-form-previewing");
+    previewMount.hidden = false;
+    activePreview = openPreview({
+      doc,
+      mount: previewMount,
+      events,
+      ...(api.loadPlayer ? { load: api.loadPlayer } : {}),
+      onClose: () => {
+        activePreview = null;
+        previewMount.hidden = true;
+        element.classList.remove("fbh-form-previewing");
+        if (!destroyed) previewButton.focus();
+      },
+    });
+  }
 
   // `api.replayReady` (see mount.js) settles once, to whatever the recorder's real outcome was.
   // Subscribing here, once, for the life of the form covers every prepare()/open() to come:
@@ -649,6 +677,7 @@ export function createForm({
     destroyed = true;
     release();
     if (activeAnnotator) activeAnnotator.close();
+    if (activePreview) activePreview.close();
     releaseUrls();
     element.remove();
   }

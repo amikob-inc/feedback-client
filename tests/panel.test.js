@@ -233,7 +233,7 @@ describe("createPanel", () => {
   // — see annotate.js's and tests/form.test.js's own notes), so this reaches in and plants the
   // exact DOM shape annotate.js produces, to prove panel.js's own reaction to it — the boundary
   // this task owns — independent of whether this environment can drive the rest of that flow.
-  describe("a nested dialog (the annotator) on top of the panel", () => {
+  describe("a nested dialog (the annotator or the preview) on top of the panel", () => {
     function plantAnnotator() {
       const dialog = document.createElement("div");
       dialog.className = "fbh-annotator";
@@ -291,6 +291,49 @@ describe("createPanel", () => {
         );
       expect(panel.isOpen()).toBe(true); // the panel itself stayed open
       expect(seenAtDocument).toHaveBeenCalledTimes(1); // and the event reached the outer listener
+      panel.destroy();
+    });
+
+    // The recording's preview (preview.js) is the second nested dialog, scoped the same way.
+    function plantPreview() {
+      const dialog = document.createElement("div");
+      dialog.className = "fbh-preview";
+      const play = document.createElement("button");
+      play.type = "button";
+      play.textContent = "Pause";
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.textContent = "Close";
+      dialog.append(play, closeButton);
+      shadow().querySelector(".fbh-body").appendChild(dialog);
+      return { dialog, play, closeButton };
+    }
+
+    it("scopes Tab to the preview dialog instead of the rest of the panel", () => {
+      const { panel } = setup();
+      panel.open();
+      const { play, closeButton } = plantPreview();
+      const root = shadow();
+      closeButton.focus();
+      root
+        .querySelector(".fbh-overlay")
+        .dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+        );
+      expect(root.activeElement).toBe(play);
+      panel.destroy();
+    });
+
+    it("lets the preview dialog handle its own Escape instead of closing the whole panel", () => {
+      const { panel } = setup();
+      panel.open();
+      plantPreview();
+      shadow()
+        .querySelector(".fbh-overlay")
+        .dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+        );
+      expect(panel.isOpen()).toBe(true);
       panel.destroy();
     });
 

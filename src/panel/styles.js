@@ -156,11 +156,47 @@ padding: 10px; border: 1px solid var(--fbh-border); border-radius: 10px; backgro
 }
 .fbh-annotator-stage { max-height: 40vh; overflow: auto; }
 .fbh-annotator-canvas { max-width: 100%; height: auto; cursor: crosshair; touch-action: none; }
+/* While the drawing dialog or the recording's preview is open the panel takes almost the whole
+   screen (owner's request, 2026-09-30); back to the ordinary size the moment it closes. */
+.fbh-panel:has(.fbh-form-annotating), .fbh-panel:has(.fbh-form-previewing) { width: min(96vw, 1800px); max-height: 96vh; }
 .fbh-annotator-hint { margin: 6px 0 0; font-size: 11px; color: var(--fbh-muted); }
 .fbh-annotator-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
 .fbh-annotator-status { margin: 0; font-size: 11.5px; color: var(--fbh-danger); }
 .fbh-annotator-status:empty { display: none; }
-.fbh-form-annotating .fbh-strip, .fbh-form-annotating .fbh-submit-row { opacity: 0.4; pointer-events: none; }
+.fbh-form-annotating .fbh-strip, .fbh-form-annotating .fbh-submit-row,
+.fbh-form-previewing .fbh-strip, .fbh-form-previewing .fbh-submit-row { opacity: 0.4; pointer-events: none; }
+.fbh-preview-mount[hidden] { display: none; }
+.fbh-preview {
+display: flex; flex-direction: column; gap: 8px;
+padding: 10px; border: 1px solid var(--fbh-border); border-radius: 10px; background: var(--fbh-bg);
+}
+.fbh-preview-stage {
+height: calc(96vh - 230px); min-height: 240px; overflow: hidden;
+display: flex; align-items: center; justify-content: center; background: var(--fbh-panel);
+}
+.fbh-preview-status { margin: 0; font-size: 11.5px; color: var(--fbh-muted); }
+.fbh-preview-status:empty { display: none; }
+.fbh-preview-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.fbh-preview-time { font-size: 11.5px; color: var(--fbh-muted); font-variant-numeric: tabular-nums; }
+/* rrweb's replayer inside the shadow root: its own stylesheet is not loaded (the player's is
+   Svelte-scoped), so the few rules the replayer needs — the wrapper, the frame, the cursor —
+   are here, by rrweb's class names, from rrweb-player/dist/style.css. */
+.rr-player { position: relative; background: #fff; border-radius: 5px; }
+.rr-player__frame { overflow: hidden; }
+.replayer-wrapper { position: relative; transform-origin: top left; }
+.replayer-wrapper > iframe { border: none; }
+.replayer-mouse {
+position: absolute; width: 20px; height: 20px; transition: left 0.05s linear, top 0.05s linear;
+background-size: contain; background-repeat: no-repeat; border-color: transparent;
+background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'><path d='M3 2 L3 16 L7 12 L10 18 L12 17 L9 11 L15 11 Z' fill='%23000' stroke='%23fff' stroke-width='1.2'/></svg>");
+}
+.replayer-mouse::after {
+content: ""; display: inline-block; width: 20px; height: 20px; background: rgb(73, 80, 246);
+border-radius: 100%; transform: translate(-50%, -50%); opacity: 0.3;
+}
+.replayer-mouse.active::after { animation: fbh-click 0.2s ease-in-out 1; }
+.replayer-mouse-tail { position: absolute; pointer-events: none; }
+@keyframes fbh-click { 0% { opacity: 0.3; width: 20px; height: 20px; } 50% { opacity: 0.5; width: 10px; height: 10px; } }
 .fbh-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .fbh-hidden-file { display: none; }
 .fbh-message, .fbh-row-message { margin: 0; font-size: 11.5px; color: var(--fbh-muted); }

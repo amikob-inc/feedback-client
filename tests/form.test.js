@@ -28,7 +28,13 @@ function fakeAnnotatorDialog(doc, mount) {
   };
 }
 
-function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, openAnnotator } = {}) {
+function setup({
+  options: extra = {},
+  api: apiOverrides = {},
+  captureScreen,
+  openAnnotator,
+  openPreview,
+} = {}) {
   const options = normalizeOptions({
     hubUrl: "https://hub.example",
     app: "cad",
@@ -66,6 +72,7 @@ function setup({ options: extra = {}, api: apiOverrides = {}, captureScreen, ope
     onSubmitted,
     captureScreen,
     openAnnotator,
+    openPreview,
   });
   document.body.appendChild(form.element);
   return { api, form, onSubmitted, options };
@@ -691,6 +698,48 @@ describe("What will be sent", () => {
     api.pending.mockClear();
     await form.prepare();
     expect(api.pending).toHaveBeenCalled();
+    form.destroy();
+  });
+
+  it("Preview opens the dialog with the frozen events, widens the form, and hands focus back on close", async () => {
+    let closeIt;
+    const openPreview = vi.fn(({ mount, events, onClose }) => {
+      const element = document.createElement("div");
+      element.className = "fbh-preview";
+      mount.appendChild(element);
+      closeIt = () => {
+        element.remove();
+        onClose();
+      };
+      expect(events).toEqual([{ type: 2, timestamp: 1000, data: {} }]);
+      return { element, close: closeIt };
+    });
+    const { form } = setup({ openPreview });
+    await form.prepare();
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).toHaveBeenCalledTimes(1);
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(true);
+    expect(document.querySelector(".fbh-preview-mount").hidden).toBe(false);
+    // A second press while it is open does nothing.
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).toHaveBeenCalledTimes(1);
+    closeIt();
+    expect(form.element.classList.contains("fbh-form-previewing")).toBe(false);
+    expect(document.querySelector(".fbh-preview-mount").hidden).toBe(true);
+    expect(document.activeElement).toBe(document.querySelector("[data-preview]"));
+    form.destroy();
+  });
+
+  it("says so instead of opening a preview when nothing was recorded", async () => {
+    const openPreview = vi.fn();
+    const { form } = setup({ openPreview, api: { replayEvents: () => [] } });
+    await form.prepare();
+    document.querySelector("[data-preview]").hidden = false;
+    document.querySelector("[data-preview]").click();
+    expect(openPreview).not.toHaveBeenCalled();
+    expect(document.querySelector(".fbh-message").textContent).toBe(
+      "Nothing has been recorded yet.",
+    );
     form.destroy();
   });
 });

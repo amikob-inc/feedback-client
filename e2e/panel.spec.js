@@ -249,6 +249,33 @@ test("sends the recording from before the panel opened, however long the report 
   expect(bundle.replay.last).toBeLessThanOrEqual(openedAt + 500);
 });
 
+test("previews the recording almost full screen, and puts everything back on Close", async ({
+  page,
+}) => {
+  await ready(page);
+  await openWithRecording(page);
+  const panelWidth = () =>
+    page.evaluate(
+      () =>
+        document
+          .getElementById("fbh-host")
+          .shadowRoot.querySelector(".fbh-panel")
+          .getBoundingClientRect().width,
+    );
+  await page.click("[data-preview]");
+  await expect(page.locator(".fbh-preview")).toBeVisible();
+  await expect(page.locator("#fake-player")).toContainText("fake player:");
+  expect(await panelWidth()).toBeGreaterThanOrEqual(page.viewportSize().width * 0.9);
+  // Send is inert while the preview is open.
+  expect(await page.locator("#fbh-submit").evaluate((n) => getComputedStyle(n).pointerEvents)).toBe(
+    "none",
+  );
+  await page.click("[data-preview-close]");
+  await expect(page.locator(".fbh-preview")).toBeHidden();
+  expect(await panelWidth()).toBeLessThanOrEqual(480);
+  expect(await focusSpot(page)).toEqual({ outer: "host", inner: "fbh-link" });
+});
+
 test("shows every status the hub can send", async ({ page }) => {
   const noise = watchConsole(page);
   await ready(page);
@@ -603,7 +630,10 @@ test("draws on the screenshot at the image's own resolution", async ({ page, req
   expect(canvas.width).toBe(1280);
   expect(canvas.height).toBe(800);
   expect(canvas.dpr).toBe(2);
-  expect(canvas.rect.width).toBeLessThan(canvas.width / 2);
+  // Displayed smaller than its own pixels (the wide dialog fits it to the window, which is
+  // narrower than the 1280px stand-in), so the mapping from a pointer position to an image pixel
+  // still has real work to do.
+  expect(canvas.rect.width).toBeLessThan(canvas.width);
 
   const y = canvas.rect.y + canvas.rect.height * 0.3;
   const from = canvas.rect.x + canvas.rect.width * 0.25;
@@ -722,10 +752,10 @@ test("never breaks the host application, even one whose every hook throws", asyn
 });
 
 test.describe("with the real recorder and the real screenshot", () => {
-  test("fetches each of the three only when it is needed", async ({ page }) => {
+  test("fetches each of the four only when it is needed", async ({ page }) => {
     const seen = new Set();
     page.on("request", (request) => seen.add(new URL(request.url()).pathname));
-    const { recorder, screenshot, panel } = chunks();
+    const { recorder, screenshot, player, panel } = chunks();
 
     // A page with the recording switched off, left alone. The window has to be long enough for a
     // fetch to have happened if one were going to: the same window is shown to be long enough by
@@ -735,7 +765,9 @@ test.describe("with the real recorder and the real screenshot", () => {
     // same idle callback the recorder would have been fetched on.
     await expect(page.locator("#dot")).not.toHaveText("0");
     await page.waitForTimeout(1500);
-    expect([...seen].filter((one) => [recorder, screenshot, panel].includes(one))).toEqual([]);
+    expect([...seen].filter((one) => [recorder, screenshot, player, panel].includes(one))).toEqual(
+      [],
+    );
 
     // Opening the panel fetches the panel itself — the size budget is kept by not downloading it
     // until now — and takes a screenshot, so only then is that module worth fetching either.
@@ -755,6 +787,18 @@ test.describe("with the real recorder and the real screenshot", () => {
     expect(seen.has(recorder)).toBe(true);
     expect(seen.has(screenshot)).toBe(false);
     expect(seen.has(panel)).toBe(false);
+    expect(seen.has(player)).toBe(false);
+
+    // The player only when a preview is asked for.
+    await page.click("#open-feedback");
+    await expect(page.locator(".fbh-sending-replay")).toBeVisible();
+    expect(seen.has(player)).toBe(false);
+    await page.click("[data-preview]");
+    await expect(page.locator(".fbh-preview")).toBeVisible();
+    await expect(page.locator(".fbh-preview-stage iframe")).toBeVisible({ timeout: 10_000 });
+    expect(seen.has(player)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".fbh-preview")).toBeHidden();
   });
 
   test("sends a screenshot with the blanked region blank, as pixels", async ({ page }) => {

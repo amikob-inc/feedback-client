@@ -103,10 +103,10 @@ async function makePng(width, height, color) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-// Stand-ins for the two lazy dependencies, used in every mode except `?real=1`. They have the
-// same shape the library calls: `domToBlob` for the screenshot, and a `record()` that emits a
-// full snapshot straight away and an incremental event twice a second, returning the stop handle
-// the library insists on.
+// Stand-ins for the three lazy dependencies, used in every mode except `?real=1`. They have the
+// same shape the library calls: `domToBlob` for the screenshot, a `Player` for the preview, and a
+// `record()` that emits a full snapshot straight away and an incremental event twice a second,
+// returning the stop handle the library insists on.
 const fakes = {
   // 1280 × 800 on purpose: wider than the panel, so the annotator's canvas is displayed scaled
   // down and the mapping from a pointer position to an image pixel has real work to do.
@@ -116,6 +116,25 @@ const fakes = {
       options.emit({ type: 2, timestamp: Date.now(), data: { node: "demo snapshot" } }, true);
       const timer = setInterval(() => options.emit({ type: 3, timestamp: Date.now() }, false), 500);
       return () => clearInterval(timer);
+    },
+  }),
+  // The player, for the default mode: shows that the preview was asked for and how many events
+  // it got, instead of playing them.
+  loadPlayer: async () => ({
+    Player: class {
+      constructor({ target, props }) {
+        const note = document.createElement("p");
+        note.id = "fake-player";
+        note.textContent = `fake player: ${props.events.length} events`;
+        target.appendChild(note);
+      }
+      addEventListener() {}
+      getMetaData() {
+        return { startTime: 0, endTime: 0, totalTime: 0 };
+      }
+      toggle() {}
+      pause() {}
+      $destroy() {}
     },
   }),
 };

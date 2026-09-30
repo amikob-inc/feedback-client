@@ -35,7 +35,8 @@
   },
   "dependencies": {
     "@rrweb/record": "^2.1.4",
-    "modern-screenshot": "^4.7.0"
+    "modern-screenshot": "^4.7.0",
+    "rrweb-player": "^2.1.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
