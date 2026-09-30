@@ -639,6 +639,17 @@ describe("What will be sent", () => {
     form.destroy();
   });
 
+  it("keeps focus on the recording switch when a render happens under it", async () => {
+    const { form } = setup();
+    await form.prepare();
+    const line = document.querySelector(".fbh-sending-replay");
+    document.getElementById("fbh-no-replay").focus();
+    form.addImage(png(), "a.png");
+    expect(document.activeElement.id).toBe("fbh-no-replay");
+    expect(document.querySelector(".fbh-sending-replay")).toBe(line);
+    form.destroy();
+  });
+
   it("offers Preview only when something has been recorded", async () => {
     const { form } = setup({
       api: {

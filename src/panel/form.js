@@ -266,17 +266,19 @@ export function createForm({
     replayLine.hidden = !replay;
     if (replay) replayText.textContent = replay.text;
     previewButton.hidden = !(replay && pending.replay);
-    clear(sending);
+    // Only the other lines are replaced: the recording's node is never detached (a node taken out
+    // of the document loses focus, and the reporter may be on its switch), so it is placed once
+    // and the fresh lines are put before or after it. Until it has a line of its own it waits,
+    // hidden, in the place it will take.
+    for (const child of [...sending.children]) if (child !== replayLine) child.remove();
+    const fresh = (line) =>
+      el(doc, "li", { class: "fbh-sending-item", "data-key": line.key, text: line.text });
+    if (replayLine.parentNode !== sending) sending.appendChild(replayLine);
     for (const line of lines) {
-      sending.appendChild(
-        line.key === "replay"
-          ? replayLine
-          : el(doc, "li", { class: "fbh-sending-item", "data-key": line.key, text: line.text }),
-      );
+      if (line.key === "replay") continue;
+      if (line.key === "screenshot") sending.insertBefore(fresh(line), replayLine);
+      else sending.appendChild(fresh(line));
     }
-    // The recording's node is always in the list, never re-created; `hidden` says there is
-    // nothing to show yet. Without a line of its own it waits in the place it will take.
-    if (!replay) sending.insertBefore(replayLine, sending.children[screenshot ? 1 : 0] || null);
   }
 
   // Task 6 replaces this with the real preview dialog.
