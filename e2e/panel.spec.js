@@ -59,14 +59,14 @@ async function ready(page, params = {}) {
   await page.waitForFunction(() => window.demoReady === true);
 }
 
-// Opens the panel and waits until it is showing a recording it really has: the note's recording
-// clause appears only once the recorder has actually started, which is also the moment the replay
+// Opens the panel and waits until it is showing a recording it really has: the recording
+// line appears only once the recorder has actually started, which is also the moment the replay
 // part is guaranteed to be in the next submit. Without this a fast test can submit before the
 // first snapshot exists and read an empty recording as a clean one.
 async function openWithRecording(page) {
   await page.click("#open-feedback");
   await expect(page.locator(".fbh-panel")).toBeVisible();
-  await expect(page.locator(".fbh-note")).toContainText("a recording");
+  await expect(page.locator(".fbh-sending-replay")).toBeVisible();
 }
 
 // Where keyboard focus is, asked twice. `document.activeElement` alone is not enough: it answers
@@ -159,6 +159,12 @@ for (const theme of ["light", "dark"]) {
     await ready(page, { theme });
     await openWithRecording(page);
 
+    const sent = page.locator(".fbh-sending li");
+    await expect(sent.first()).toHaveText(
+      "1 screenshot of this page, taken when you opened the panel",
+    );
+    await expect(sent.last()).toContainText("The console and network log:");
+    await expect(page.locator(".fbh-sending-replay")).toContainText("before you opened the panel");
     await expect(page.locator(".fbh-thumb figcaption").first()).toHaveText("Screenshot");
     await page.selectOption("#fbh-type", "Question");
     await page.fill("#fbh-text", "e2e smoke report");
@@ -192,11 +198,17 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-test("leaves the recording out when asked", async ({ page, request }) => {
+test("leaves the recording out when asked, without moving the line", async ({ page, request }) => {
   await ready(page);
   await openWithRecording(page);
+  const line = page.locator(".fbh-sending-replay");
+  const before = await line.boundingBox();
+  const submitBefore = await page.locator("#fbh-submit").boundingBox();
   await page.check("#fbh-no-replay");
-  await expect(page.locator(".fbh-note")).not.toContainText("a recording");
+  await expect(line).toHaveClass(/is-off/);
+  // The same words in the same place: nothing under the switch moved.
+  expect(await line.boundingBox()).toEqual(before);
+  expect(await page.locator("#fbh-submit").boundingBox()).toEqual(submitBefore);
   await page.fill("#fbh-text", "no recording please");
   await page.click("#fbh-submit");
   await expect(page.locator(".fbh-row").first()).toContainText("no recording please");
@@ -204,6 +216,37 @@ test("leaves the recording out when asked", async ({ page, request }) => {
   const bundle = await lastBundle(request);
   expect(bundle.parts).not.toContain("replay");
   expect(bundle.report.capture.replay).toBe(false);
+});
+
+test("sends the recording from before the panel opened, however long the report takes", async ({
+  page,
+  request,
+}) => {
+  await ready(page, { real: "1" });
+  // Something to record before the panel opens, then a moment for it to be recorded.
+  for (let i = 0; i < 3; i += 1) await page.click("#host-click");
+  await page.waitForTimeout(600);
+  const openedAt = await page.evaluate(() => Date.now());
+  await openWithRecording(page);
+  // Writing takes a while, and the page keeps changing meanwhile: none of this may be in the
+  // report's recording.
+  await page.waitForTimeout(2500);
+  // The open panel's backdrop covers the page, so the host is clicked from script.
+  await page.evaluate(() => {
+    for (let i = 0; i < 3; i += 1) document.getElementById("host-click").click();
+  });
+  await expect(page.locator("#host-clicks")).toHaveText("6");
+  await page.fill("#fbh-text", "written slowly");
+  await page.click("#fbh-submit");
+  await expect(page.locator(".fbh-row").first()).toContainText("written slowly");
+
+  const bundle = await lastBundle(request);
+  expect(bundle.parts).toContain("replay");
+  expect(bundle.replay.events).toBeGreaterThan(1);
+  expect(bundle.replay.first).toBeLessThan(openedAt);
+  // A little slack for the recorder's own emit timing; three seconds later than the click is
+  // exactly what must not be there.
+  expect(bundle.replay.last).toBeLessThanOrEqual(openedAt + 500);
 });
 
 test("shows every status the hub can send", async ({ page }) => {

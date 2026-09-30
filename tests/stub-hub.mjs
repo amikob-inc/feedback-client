@@ -183,8 +183,16 @@ async function handle(req, res) {
     // -1 for a recording that will not parse, which is a different thing from one with no events
     // in it and must not be reported as the same.
     let events;
+    let first = null;
+    let last_ = null;
     try {
-      events = JSON.parse(last.replayText || "[]").length;
+      const parsed = JSON.parse(last.replayText || "[]");
+      events = parsed.length;
+      for (const one of parsed) {
+        if (typeof one.timestamp !== "number") continue;
+        if (first === null || one.timestamp < first) first = one.timestamp;
+        if (last_ === null || one.timestamp > last_) last_ = one.timestamp;
+      }
     } catch {
       events = -1;
     }
@@ -193,7 +201,7 @@ async function handle(req, res) {
       report: last.report,
       parts: last.parts,
       sizes: last.sizes,
-      replay: { bytes: last.replayText.length, events },
+      replay: { bytes: last.replayText.length, events, first, last: last_ },
       found: findIn({ report: JSON.stringify(last.report), replay: last.replayText }, needles),
       context: around ? contextAround(last.replayText, around) : undefined,
     });
