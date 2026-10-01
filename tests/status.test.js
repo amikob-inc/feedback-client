@@ -31,6 +31,10 @@ describe("statusLabel", () => {
     ["duplicate", { duplicateOf: 8, originalState: "open" }, "Already tracked as #8 (open)"],
     ["duplicate", { duplicateOf: 8, originalState: "fixed" }, "Already tracked as #8 (fixed)"],
     ["duplicate", { duplicateOf: 8, originalState: "closed" }, "Already tracked as #8 (closed)"],
+    // A stored duplicate verdict with no number (hand-written, or from before the hub's schema
+    // refused one): the panel says what it knows and no more (feedback-hub #9).
+    ["duplicate", {}, "Already tracked"],
+    ["duplicate", { originalState: "open" }, "Already tracked"],
     ["needs_reply", {}, "Needs your reply"],
     ["not_filed", {}, "Not filed"],
     ["error", {}, "Could not triage"],
@@ -65,7 +69,7 @@ describe("the fixture shared with the hub", () => {
   it("has not drifted (the hub asserts the same digest)", () => {
     const canonical = JSON.stringify(JSON.parse(raw));
     expect(createHash("sha256").update(canonical).digest("hex")).toBe(
-      "52e424170124b5aac1d76e5e6202192dfedfccd86042fc10c327a7bf09ff374b",
+      "00f02909da7fdaee99f892633e56e6c6bc53a64b439e5ed684c2b803af8d8a9c",
     );
   });
 

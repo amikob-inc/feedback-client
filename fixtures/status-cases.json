@@ -273,6 +273,23 @@
       "canDelete": true
     },
     {
+      "name": "duplicate verdict with no issue number (hand-written, or from before the schema)",
+      "input": {
+        "dispatchedMinutesAgo": 5,
+        "pending": false,
+        "verdict": {
+          "verdict": "duplicate"
+        },
+        "repliesAfterVerdict": false,
+        "issue": null,
+        "prs": [],
+        "original": null
+      },
+      "status": "duplicate",
+      "label": "Already tracked",
+      "canDelete": true
+    },
+    {
       "name": "filed, the issue could not be read",
       "input": {
         "dispatchedMinutesAgo": 5,

@@ -34,6 +34,8 @@ export function statusLabel(status, ctx = {}) {
     case "answered":
       return "Answered";
     case "duplicate":
+      // No number means no original to name or to read the state of (feedback-hub #9).
+      if (ctx.duplicateOf === undefined) return "Already tracked";
       return `Already tracked as #${ctx.duplicateOf}${ctx.originalState ? ` (${ctx.originalState})` : ""}`;
     case "needs_reply":
       return "Needs your reply";
