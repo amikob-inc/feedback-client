@@ -292,7 +292,7 @@ test("shows every status the hub can send", async ({ page }) => {
   await page.click("#open-feedback");
   // One row per case in fixtures/status-cases.json, which is the file the hub asserts against
   // too — so a status added on either side lands here as a count that no longer matches.
-  await expect(page.locator(".fbh-row")).toHaveCount(23);
+  await expect(page.locator(".fbh-row")).toHaveCount(24);
   for (const label of [
     "Received, being looked at",
     "Received, waiting",
@@ -306,6 +306,7 @@ test("shows every status the hub can send", async ({ page }) => {
     "Already tracked as #3 (fixed)",
     "Already tracked as #3 (closed)",
     "Already tracked as #3",
+    "Already tracked",
     "Needs your reply",
     "Not filed",
     "Could not triage",
@@ -322,7 +323,7 @@ test("deletes a report after asking once, and offers no Delete under a fix", asy
   const noise = watchConsole(page);
   await ready(page);
   await page.click("#open-feedback");
-  await expect(page.locator(".fbh-row")).toHaveCount(23);
+  await expect(page.locator(".fbh-row")).toHaveCount(24);
   // Deletable, and filed against an open issue, so the question names the issue it will close.
   const row = page.locator(".fbh-row", { hasText: "filed, open issue with no fix activity" });
   await expect(row.locator("[data-delete]")).toBeVisible();
@@ -336,7 +337,7 @@ test("deletes a report after asking once, and offers no Delete under a fix", asy
   await row.locator("[data-delete]").click();
   await row.locator("[data-delete-confirm]").click();
   await expect(row).toHaveCount(0);
-  await expect(page.locator(".fbh-row")).toHaveCount(22);
+  await expect(page.locator(".fbh-row")).toHaveCount(23);
   await expect(page.locator(".fbh-list-message")).toHaveText("Report deleted.");
   // The button that was pressed is gone with its row; focus is on the confirmation, inside the
   // dialog, not on <body>.
@@ -357,7 +358,7 @@ test("deletes a report after asking once, and offers no Delete under a fix", asy
   await page.reload();
   await page.waitForFunction(() => window.demoReady === true);
   await page.click("#open-feedback");
-  await expect(page.locator(".fbh-row")).toHaveCount(22);
+  await expect(page.locator(".fbh-row")).toHaveCount(23);
   await expect(row).toHaveCount(0);
   expect(noise).toEqual([]);
 });
