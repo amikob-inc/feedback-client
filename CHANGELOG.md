@@ -3,6 +3,13 @@
 All notable changes to this package. Consumers install a git tag
 (`pnpm add github:amikob-inc/feedback-client#vX.Y.Z`), so every release is a tag and an entry here.
 
+## Unreleased
+
+- A duplicate verdict stored without an issue number — hand-written, or from before the hub's
+  schema refused one — reads "Already tracked" instead of "Already tracked as #undefined"
+  (feedback-hub #9; owner's decision 2026-10-01). `fixtures/status-cases.json` gains the case and
+  its digest changes; the hub asserts the same digest in its copy.
+
 ## 0.3.0 — 2026-09-30
 
 - A click on the backdrop while the drawing or the preview dialog is open no longer closes the
