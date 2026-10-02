@@ -5,6 +5,12 @@ All notable changes to this package. Consumers install a git tag
 
 ## Unreleased
 
+- **Refresh** in the heading of "My reports" asks the hub at once instead of at the next poll
+  (cad-dashboard #94: a reporter reloaded the whole page to see an answer land). While the
+  listing is on its way the button reads "Refreshing…" and ignores another press; it is
+  `aria-disabled`, never `disabled`, so keyboard focus stays on it inside the dialog. "Reports
+  updated." confirms it in the list's live region; a failure keeps the rows already shown and says
+  why there, or, with no rows, where the placeholder was. Panel chunk only; page load unchanged.
 - A duplicate verdict stored without an issue number — hand-written, or from before the hub's
   schema refused one — reads "Already tracked" instead of "Already tracked as #undefined"
   (feedback-hub #9; owner's decision 2026-10-01). `fixtures/status-cases.json` gains the case and

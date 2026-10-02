@@ -400,6 +400,48 @@ test("answers a question and retries a failed triage", async ({ page }) => {
   await expect(retryRow.locator(".fbh-pill")).toHaveText("Received, being looked at");
 });
 
+// cad-dashboard #94: a reporter had to reload the whole page to see an answer land.
+test("refreshes My reports on demand, and keeps the list when the hub cannot be reached", async ({
+  page,
+}) => {
+  const noise = watchConsole(page);
+  await ready(page);
+  await page.click("#open-feedback");
+  await expect(page.locator(".fbh-row")).toHaveCount(24);
+  const refresh = page.locator("[data-refresh]");
+  const note = page.locator(".fbh-list-message");
+
+  const listing = page.waitForRequest(
+    (req) => req.method() === "GET" && new URL(req.url()).pathname === "/v1/reports",
+  );
+  await refresh.click();
+  await listing;
+  await expect(note).toHaveText("Reports updated.");
+  await expect(page.locator(".fbh-row")).toHaveCount(24);
+  // aria-disabled while busy, never `disabled`: focus stays on the button it was on, inside the
+  // dialog, rather than dropping to <body>.
+  expect(await focusSpot(page)).toEqual({ outer: "host", inner: "fbh-ghost" });
+  expect(noise).toEqual([]);
+
+  // Held, then cut: the busy state is visible while it waits, and the failure keeps every row.
+  let release;
+  const held = new Promise((resolve) => (release = resolve));
+  // A predicate, not a glob: the listing carries `?app=…`, which a glob would have to spell out.
+  const isListing = (url) => url.origin === HUB && url.pathname === "/v1/reports";
+  await page.route(isListing, async (route) => {
+    await held;
+    await route.abort();
+  });
+  await refresh.click();
+  await expect(refresh).toHaveText("Refreshing…");
+  await expect(refresh).toHaveAttribute("aria-disabled", "true");
+  release();
+  await expect(note).toHaveText("Couldn't send, retry.");
+  await expect(refresh).toHaveText("Refresh");
+  await expect(refresh).not.toHaveAttribute("aria-disabled");
+  await expect(page.locator(".fbh-row")).toHaveCount(24);
+});
+
 test("says to sign in when there is no session", async ({ page }) => {
   await ready(page);
   await page.click("#toggle-signin");
