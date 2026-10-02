@@ -299,6 +299,18 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     id: "fbh-reports-heading",
     text: "My reports",
   });
+  // Asks the hub now instead of at the next poll (cad-dashboard #94: the reporter reloaded the
+  // whole page to see an answer land). Busy is aria-disabled, not `disabled`: disabling the
+  // control the reporter's focus is on drops that focus to <body>, outside the shadow root and so
+  // outside the dialog's focus trap and its Escape — the trap the row buttons have to work around.
+  const refreshButton = el(doc, "button", {
+    type: "button",
+    class: "fbh-ghost",
+    "data-refresh": true,
+    text: "Refresh",
+    onClick: () => onRefresh(),
+  });
+  const head = el(doc, "div", { class: "fbh-reports-head" }, [heading, refreshButton]);
   const listEl = el(doc, "ul", { class: "fbh-list", "aria-labelledby": "fbh-reports-heading" });
   const EMPTY_TEXT = "Nothing yet. Your reports will show up here.";
   const empty = el(doc, "p", {
@@ -321,11 +333,12 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     doc,
     "section",
     { class: "fbh-reports", "aria-labelledby": "fbh-reports-heading" },
-    [heading, empty, listEl, note],
+    [head, empty, listEl, note],
   );
 
   let items = [];
   let timer = null;
+  let refreshing = false;
 
   function me() {
     const user = safeCall(options.user, null, "user()");
@@ -498,7 +511,9 @@ export function createList({ api, options, doc, now = () => new Date() }) {
     }
   }
 
-  async function refresh() {
+  // One listing, drawn. Resolves to null, or to what went wrong when it could not be fetched; it
+  // never rejects, since the poll calls it unattended (as refresh(), below).
+  async function load() {
     try {
       const page = await api.list();
       items = Array.isArray(page && page.items) ? page.items : [];
@@ -508,15 +523,46 @@ export function createList({ api, options, doc, now = () => new Date() }) {
       } catch (err) {
         warnOnce("markRead", err);
       }
+      return null;
     } catch (err) {
+      const message = err && err.message ? err.message : "Couldn't send, retry.";
       if (!items.length) {
         empty.hidden = false;
         // The same live region as the placeholder, on the path that repeats: a session that has
         // expired fails every poll with the same words, which must not be read out every poll.
-        const message = err && err.message ? err.message : "Couldn't send, retry.";
         if (empty.textContent !== message) empty.textContent = message;
       }
+      return message;
     }
+  }
+
+  async function refresh() {
+    await load();
+  }
+
+  function setRefreshing(busy) {
+    refreshing = busy;
+    refreshButton.textContent = busy ? "Refreshing…" : "Refresh";
+    if (busy) {
+      refreshButton.setAttribute("aria-disabled", "true");
+      element.setAttribute("aria-busy", "true");
+    } else {
+      refreshButton.removeAttribute("aria-disabled");
+      element.removeAttribute("aria-busy");
+    }
+  }
+
+  // A failed refresh keeps the rows already on screen and says why in the list's own live region;
+  // with no rows to keep, load() has already put the reason where the placeholder was, and saying
+  // it twice would read it out twice.
+  async function onRefresh() {
+    if (refreshing) return;
+    note.textContent = "";
+    setRefreshing(true);
+    const failure = await load();
+    setRefreshing(false);
+    if (failure === null) note.textContent = "Reports updated.";
+    else if (items.length) note.textContent = failure;
   }
 
   // The row the reporter sees the instant a report is sent: the hub's 202 carries only an id, and

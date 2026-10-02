@@ -501,6 +501,152 @@ describe("createList", () => {
     list.destroy();
   });
 
+  // cad-dashboard #94: the reporter had to reload the whole page to see an answer land.
+  describe("the Refresh button", () => {
+    function deferred() {
+      let resolve;
+      let reject;
+      const promise = new Promise((ok, fail) => {
+        resolve = ok;
+        reject = fail;
+      });
+      return { promise, resolve, reject };
+    }
+
+    it("sits in the heading of My reports", () => {
+      const { list } = setup();
+      const button = document.querySelector(".fbh-reports-head [data-refresh]");
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.getAttribute("type")).toBe("button");
+      expect(button.textContent).toBe("Refresh");
+      list.destroy();
+    });
+
+    it("asks the hub again and draws what it says now", async () => {
+      let status = "triaging";
+      const { list, api } = setup({
+        list: vi.fn(async () => ({
+          items: [
+            item({
+              status,
+              label: status === "answered" ? "Answered" : "Received, being looked at",
+            }),
+          ],
+          nextCursor: null,
+        })),
+      });
+      await list.refresh();
+      expect(document.querySelector(".fbh-pill").textContent).toBe("Received, being looked at");
+      status = "answered";
+      document.querySelector("[data-refresh]").click();
+      await vi.waitFor(() => expect(api.list).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() =>
+        expect(document.querySelector(".fbh-pill").textContent).toBe("Answered"),
+      );
+      expect(api.markRead).toHaveBeenCalledTimes(2);
+      expect(document.querySelector(".fbh-list-message").textContent).toBe("Reports updated.");
+      list.destroy();
+    });
+
+    it("says it is busy while the listing is on its way, and a second press sends nothing", async () => {
+      const pending = deferred();
+      const { list, api } = setup({ list: vi.fn(() => pending.promise) });
+      const button = document.querySelector("[data-refresh]");
+      button.click();
+      expect(api.list).toHaveBeenCalledTimes(1);
+      expect(button.textContent).toBe("Refreshing…");
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+      expect(list.element.getAttribute("aria-busy")).toBe("true");
+      button.click();
+      expect(api.list).toHaveBeenCalledTimes(1);
+      pending.resolve({ items: [item()], nextCursor: null });
+      await vi.waitFor(() => expect(button.textContent).toBe("Refresh"));
+      expect(button.hasAttribute("aria-disabled")).toBe(false);
+      expect(list.element.hasAttribute("aria-busy")).toBe(false);
+      expect(document.querySelectorAll(".fbh-row")).toHaveLength(1);
+      list.destroy();
+    });
+
+    // Not `disabled`: a disabled button drops the focus it holds to <body>, which in the real
+    // panel is outside the shadow root and so outside the dialog's focus trap and its Escape.
+    it("keeps keyboard focus on the button while it is busy", async () => {
+      const pending = deferred();
+      const { list } = setup({ list: vi.fn(() => pending.promise) });
+      const button = document.querySelector("[data-refresh]");
+      button.focus();
+      button.click();
+      expect(button.disabled).toBe(false);
+      expect(document.activeElement).toBe(button);
+      pending.resolve({ items: [], nextCursor: null });
+      await vi.waitFor(() => expect(button.textContent).toBe("Refresh"));
+      expect(document.activeElement).toBe(button);
+      list.destroy();
+    });
+
+    it("keeps the list it has and says why when the refresh fails", async () => {
+      let fail = false;
+      const { list } = setup({
+        list: vi.fn(async () => {
+          if (fail) throw new Error("You're offline. Check your connection and try again.");
+          return { items: [item()], nextCursor: null };
+        }),
+      });
+      await list.refresh();
+      fail = true;
+      const button = document.querySelector("[data-refresh]");
+      button.click();
+      await vi.waitFor(() =>
+        expect(document.querySelector(".fbh-list-message").textContent).toBe(
+          "You're offline. Check your connection and try again.",
+        ),
+      );
+      expect(document.querySelectorAll(".fbh-row")).toHaveLength(1);
+      expect(document.querySelector(".fbh-empty").hidden).toBe(true);
+      expect(button.textContent).toBe("Refresh");
+      expect(button.hasAttribute("aria-disabled")).toBe(false);
+      list.destroy();
+    });
+
+    it("says why once, in place of the empty list, when there is nothing to keep", async () => {
+      const { list } = setup({
+        list: vi.fn(async () => {
+          throw new Error("Your session expired; sign in again.");
+        }),
+      });
+      document.querySelector("[data-refresh]").click();
+      await vi.waitFor(() =>
+        expect(document.querySelector(".fbh-empty").textContent).toBe(
+          "Your session expired; sign in again.",
+        ),
+      );
+      expect(document.querySelector(".fbh-list-message").textContent).toBe("");
+      list.destroy();
+    });
+
+    it("clears an earlier note when it starts", async () => {
+      const pending = deferred();
+      let calls = 0;
+      const { list } = setup({
+        list: vi.fn(() => {
+          calls += 1;
+          return calls === 1
+            ? Promise.reject(new Error("Couldn't reach the server."))
+            : pending.promise;
+        }),
+      });
+      await list.refresh().catch(() => {});
+      list.addOptimistic({ id: "new", section: "General", type: "Bug", text: "x" });
+      const button = document.querySelector("[data-refresh]");
+      const note = document.querySelector(".fbh-list-message");
+      note.textContent = "Report deleted.";
+      button.click();
+      expect(note.textContent).toBe("");
+      pending.resolve({ items: [item()], nextCursor: null });
+      await vi.waitFor(() => expect(note.textContent).toBe("Reports updated."));
+      list.destroy();
+    });
+  });
+
   it("puts a new report at the top as Received, being looked at", async () => {
     const { list } = setup();
     await list.refresh();
